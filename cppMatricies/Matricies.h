@@ -35,6 +35,10 @@ private: // -- data -- //
 	std::vector<T> data; // the elements in the array
 	std::size_t r, c;    // number of rows / cols
 
+private: // -- helpers -- //
+
+
+
 public: // -- ctor / dtor / asgn -- //
 
 	// creates an empty matrix
@@ -105,6 +109,20 @@ public: // -- utilities -- //
 		return data[row * c + col];
 	}
 
+	// creates an nxn identity matrix
+	static Matrix identity(std::size_t n)
+	{
+		// allocate the result
+		Matrix res(n, n);
+
+		// fill with identity elements
+		for (std::size_t row = 0; row < n; ++row)
+			for (std::size_t col = 0; col < n; ++col)
+				res(row, col) = row == col ? 1 : 0;
+
+		return res;
+	}
+
 public: // -- elementary row operations -- //
 
 	// swaps rows a and b
@@ -153,6 +171,78 @@ public: // -- elementary row operations -- //
 	}
 
 public: // -- operations -- //
+
+	// finds the determinant of the matrix
+	// throws MatrixSizeError if cannot find determinant or if matrix is empty
+	T det() const
+	{
+		if (r != c) throw MatrixSizeError("Only square matricies have a determinant");
+		if (r == 0) throw MatrixSizeError("Cannot take the determinant of an empty matrix");
+
+		switch (r)
+		{
+		case 1: return (*this)(0, 0);
+		case 2: return (*this)(0, 0) * (*this)(1, 1) - (*this)(1, 0)*(*this)(0, 1);
+
+		default:
+			T sum = 0; // initialize sum to zero
+
+			// add cofactors along first row
+			for (std::size_t col = 0; col < c; ++col)
+				sum += cofactor(0, col);
+
+			return sum;
+		}
+	}
+
+	// returns the <row><col> minor (i.e. the result of removing row <row> and col <col>)
+	// throws MatrixSizeError if matrix is empty
+	// also throws by det()
+	Matrix minor(std::size_t row, std::size_t col) const
+	{
+		if (r == 0) throw MatrixSizeError("Cannot take a minor from an empty matrix");
+
+		// allocate the result
+		Matrix res(r - 1, c - 1);
+
+		// fill its entries
+		for (std::size_t _row = 0; _row < row; ++_row)
+		{
+			for (std::size_t _col = 0; _col < col; ++_col)
+				res(_row, _col) = (*this)(_row, _col);
+			for (std::size_t _col = col + 1; _col < c; ++_col)
+				res(_row, _col - 1) = (*this)(_row, _col);
+		}
+		for (std::size_t _row = row + 1; _row < r; ++_row)
+		{
+			for (std::size_t _col = 0; _col < col; ++_col)
+				res(_row - 1, _col) = (*this)(_row, _col);
+			for (std::size_t _col = col + 1; _col < c; ++_col)
+				res(_row - 1, _col - 1) = (*this)(_row, _col);
+		}
+
+		return res;
+	}
+	// returns the <row><col> cofactor (i.e. (-1)^(row+col) * (row, col) * minor(row,col).det() )
+	// throws by minor()
+	T cofactor(std::size_t row, std::size_t col) const
+	{
+		return ((row + col) & 1 ? -1 : 1) * (*this)(row, col) * minor(row, col).det();
+	}
+	// returns the adjugate matrix (i.e. matrix of cofactors)
+	// throws by cofactor()
+	Matrix adjugate() const
+	{
+		// allocate the result
+		Matrix res(r, c);
+
+		// fill with cofactors
+		for (std::size_t row = 0; row < r; ++row)
+			for (std::size_t col = 0; col < c; ++col)
+				res(row, col) = cofactor(row, col);
+
+		return res;
+	}
 
 	// puts the matrix into row echelon form. returns the rank of the matrix
 	std::size_t REF()
@@ -240,9 +330,11 @@ public: // -- operations -- //
 	}
 
 	// attempts to find the inverse of the matrix. returns true if successful and stores inverse in <dest>
+	// throws MatrixSizeError if matrix is not square or is empty
 	bool inverse(Matrix &dest) const
 	{
 		if (r != c) throw MatrixSizeError("Only square matricies are invertible");
+		if (r == 0) throw MatrixSizeError("Cannot take the inverse of an empty matrix");
 
 		Matrix util(r, 2 * c); // make a wide matrix
 
@@ -251,7 +343,7 @@ public: // -- operations -- //
 			for (std::size_t col = 0; col < c; ++col)
 			{
 				util(row, col) = (*this)(row, col);
-				util(row + r, col) = row == col ? 1 : 0;
+				util(row, col + c) = row == col ? 1 : 0;
 			}
 
 		// if putting util matrix into rref has full rank, inversion was successful
@@ -263,7 +355,7 @@ public: // -- operations -- //
 			// copy inverse (right side) to dest
 			for (std::size_t row = 0; row < r; ++row)
 				for (std::size_t col = 0; col < c; ++col)
-					dest(row, col) = util(row + r, col);
+					dest(row, col) = util(row, col + c);
 
 			return true;
 		}
@@ -274,7 +366,7 @@ public: // -- operations -- //
 // -- io -- //
 
 template<typename T>
-std::ostream &operator<<(std::ostream &ostr, const Matrix<T> m)
+std::ostream &operator<<(std::ostream &ostr, const Matrix<T> &m)
 {
 	for (std::size_t row = 0; row < m.rows(); ++row)
 	{
@@ -361,20 +453,20 @@ static Matrix<T> operator*(const Matrix<T> &lhs, const Matrix<T> &rhs)
 	if (lhs.cols() != rhs.rows()) throw MatrixSizeError("Matrix multiplication requires lhs #cols equal rhs #rows");
 
 	Matrix<T> res(lhs.rows(), rhs.cols()); // allocate the result
-	T dot; // the destination of the dot product (potentially-large)
+	T dot; // the destination of the dot product
 
 	for(std::size_t row = 0; row < res.rows(); ++row)
 		for (std::size_t col = 0; col < res.cols(); ++col)
 		{
-			// initialize dot to first term (as T is not guaranteed to have a ctor with a default of "zero")
-			dot = lhs(row, 0) * rhs(0, col);
+			// initialize dot to zero
+			dot = 0;
 
-			// add all the other terms
-			for (std::size_t i = 1; i < lhs.cols(); ++i)
+			// compute the dot product
+			for (std::size_t i = 0; i < lhs.cols(); ++i)
 				dot += lhs(row, i) * rhs(i, col);
 
 			// assign as result entry
-			res(row, col) = std::move(dot);
+			res(row, col) = dot;
 		}
 
 	return res;
