@@ -33,7 +33,7 @@ public: // -- ctor / dtor / asgn -- //
 
 	// due to using std::vector for the data, default cpy ctor / dtor / asgn are sufficient
 
-public: // -- operations -- //
+public: // -- utilities -- //
 
 	// gets the number of rows/cols in the matrix
 	std::size_t rows() const { return r; }
@@ -88,6 +88,57 @@ public: // -- operations -- //
 		if (row >= r || col >= c) throw std::out_of_range("Specified matrix element out of bounds");
 		return data[row * c + col];
 	}
+
+public: // -- elementary row operations -- //
+
+	// swaps rows a and b
+	void swapRows(std::size_t a, std::size_t b)
+	{
+		using std::swap; // ADL idiom
+
+		// early exit if swapping to same destination
+		if (a == b) return;
+
+		for (std::size_t i = 0; i < col; ++i)
+			swap((*this)(a, i), (*this)(b, i));
+	}
+
+	// multiplies the elements in a row by a scalar
+	void multRow(std::size_t row, const T &f)
+	{
+		for (std::size_t i = 0; i < c; ++i) (*this)(row, i) *= f;
+	}
+	// divides the elements in a row by a scalar
+	void divRow(std::size_t row, const T &f)
+	{
+		for (std::size_t i = 0; i < c; ++i) (*this)(row, i) /= f;
+	}
+
+	// adds row <from> to row <to>
+	void addRow(std::size_t to, std::size_t from)
+	{
+		for (std::size_t i = 0; i < c; ++i) (*this)(to, i) += (*this)(from, i);
+	}
+	// subtracts row <from> from row <to>
+	void subRow(std::size_t to, std::size_t from)
+	{
+		for (std::size_t i = 0; i < c; ++i) (*this)(to, i) -= (*this)(from, i);
+	}
+
+	// adds a multiple of row <from> to row <to>
+	void addRowMult(std::size_t to, std::size_t from, const T &f)
+	{
+		for (std::size_t i = 0; i < c; ++i) (*this)(to, i) += (*this)(from, i) * f;
+	}
+	// subtracts a multiple of row <from> to row <to>
+	void subRowMult(std::size_t to, std::size_t from, const T &f)
+	{
+		for (std::size_t i = 0; i < c; ++i) (*this)(to, i) -= (*this)(from, i) * f;
+	}
+
+public: // -- operations -- //
+
+
 };
 
 // adds matrix b to matrix a
