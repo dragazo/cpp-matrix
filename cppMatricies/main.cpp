@@ -14,7 +14,7 @@ int main()
 
 	std::cout << m << '\n';
 
-	m.REF();
+	std::cout << "rank: " << m.RREF() << '\n';
 	//m.divRow(1, 2);
 
 	std::cout << m << '\n';

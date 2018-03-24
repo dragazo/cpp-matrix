@@ -147,8 +147,8 @@ public: // -- elementary row operations -- //
 
 public: // -- operations -- //
 
-	// attempts to put the matrix into row echelon form
-	bool REF()
+	// puts the matrix into row echelon form. returns the rank of the matrix
+	std::size_t REF()
 	{
 		// for each row
 		for (std::size_t row = 0, col; row < r; ++row)
@@ -160,9 +160,9 @@ public: // -- operations -- //
 				for (std::size_t top = row, bottom = r - 1; ;)
 				{
 					// wind top to next zero entry
-					for (; top < r && (*this)(top, col) != 0; ++top);
+					for (; top < bottom && (*this)(top, col) != 0; ++top);
 					// wind bottom to next nonzero entry
-					for (; bottom > row && (*this)(bottom, col) == 0; --bottom);
+					for (; top < bottom && (*this)(bottom, col) == 0; --bottom);
 
 					// if they're still valid, perform the swap
 					if (top < bottom) swapRows(top, bottom);
@@ -174,7 +174,7 @@ public: // -- operations -- //
 				if ((*this)(row, col) != 0) break;
 			}
 			// if we didn't find a leading entry, the rest of the matrix is zeroes (so we're done)
-			if(col == c) return true;
+			if(col == c) return row;
 
 			// make this row's leading entry a 1 via row division
 			divRow(row, (*this)(row, col));
@@ -185,7 +185,51 @@ public: // -- operations -- //
 		}
 
 		// successfully converted to REF
-		return true;
+		return r;
+	}
+	// puts the matrix into reduced row echelon form. returns the rank of the matrix
+	std::size_t RREF()
+	{
+		// for each row
+		for (std::size_t row = 0, col; row < r; ++row)
+		{
+			// find the leading entry
+			for (col = row; col < c; ++col)
+			{
+				// move all the zero-entries here and down in this col to the bottom
+				for (std::size_t top = row, bottom = r - 1; ;)
+				{
+					// wind top to next zero entry
+					for (; top < bottom && (*this)(top, col) != 0; ++top);
+					// wind bottom to next nonzero entry
+					for (; top < bottom && (*this)(bottom, col) == 0; --bottom);
+
+					// if they're still valid, perform the swap
+					if (top < bottom) swapRows(top, bottom);
+					// otherwise, we're done sorting
+					else break;
+				}
+
+				// if after sorting this element is nonzero, it is the leading entry
+				if ((*this)(row, col) != 0) break;
+			}
+			// if we didn't find a leading entry, the rest of the matrix is zeroes (so we're done)
+			if (col == c) return row;
+
+			// make this row's leading entry a 1 via row division
+			divRow(row, (*this)(row, col));
+
+			// use this row to eliminate the higher rows
+			for (std::size_t j = 0; j < row; ++j)
+				if ((*this)(j, col) != 0) subRowMult(j, row, (*this)(j, col));
+
+			// use this row to eliminate the lower rows
+			for (std::size_t j = row + 1; j < r && (*this)(j, col) != 0; ++j)
+				subRowMult(j, row, (*this)(j, col));
+		}
+
+		// successfully converted to REF
+		return r;
 	}
 };
 
