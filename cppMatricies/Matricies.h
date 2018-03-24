@@ -5,6 +5,7 @@
 #include <vector>
 #include <exception>
 #include <utility>
+#include <iostream>
 
 struct MatrixSizeError : std::exception
 {
@@ -14,6 +15,14 @@ struct MatrixSizeError : std::exception
 template<typename T>
 class Matrix
 {
+public: // -- enums / etc -- //
+
+	// the result of a row reduction operation
+	/*enum RRResult
+	{
+		None = 0, REF = 1, RREF = 3
+	};*/
+
 private: // -- data -- //
 
 	std::vector<T> data; // the elements in the array
@@ -74,7 +83,7 @@ public: // -- utilities -- //
 
 	// gets the element at the specified row and col
 	T &operator()(std::size_t row, std::size_t col) { return data[row * c + col]; }
-	const T &operator()(std::size_t row, std::size_t col) const { return data[row * c + col]; }
+	T operator()(std::size_t row, std::size_t col) const { return data[row * c + col]; }
 
 	// gets the element at the specified row and col, but with bounds checking
 	// throws std::out_of_range if element is out of bounds
@@ -83,7 +92,7 @@ public: // -- utilities -- //
 		if (row >= r || col >= c) throw std::out_of_range("Specified matrix element out of bounds");
 		return data[row * c + col];
 	}
-	const T &at(std::size_t row, std::size_t col) const
+	T at(std::size_t row, std::size_t col) const
 	{
 		if (row >= r || col >= c) throw std::out_of_range("Specified matrix element out of bounds");
 		return data[row * c + col];
@@ -99,17 +108,17 @@ public: // -- elementary row operations -- //
 		// early exit if swapping to same destination
 		if (a == b) return;
 
-		for (std::size_t i = 0; i < col; ++i)
+		for (std::size_t i = 0; i < c; ++i)
 			swap((*this)(a, i), (*this)(b, i));
 	}
 
 	// multiplies the elements in a row by a scalar
-	void multRow(std::size_t row, const T &f)
+	void multRow(std::size_t row, T f)
 	{
 		for (std::size_t i = 0; i < c; ++i) (*this)(row, i) *= f;
 	}
 	// divides the elements in a row by a scalar
-	void divRow(std::size_t row, const T &f)
+	void divRow(std::size_t row, T f)
 	{
 		for (std::size_t i = 0; i < c; ++i) (*this)(row, i) /= f;
 	}
@@ -126,20 +135,77 @@ public: // -- elementary row operations -- //
 	}
 
 	// adds a multiple of row <from> to row <to>
-	void addRowMult(std::size_t to, std::size_t from, const T &f)
+	void addRowMult(std::size_t to, std::size_t from, T f)
 	{
 		for (std::size_t i = 0; i < c; ++i) (*this)(to, i) += (*this)(from, i) * f;
 	}
 	// subtracts a multiple of row <from> to row <to>
-	void subRowMult(std::size_t to, std::size_t from, const T &f)
+	void subRowMult(std::size_t to, std::size_t from, T f)
 	{
 		for (std::size_t i = 0; i < c; ++i) (*this)(to, i) -= (*this)(from, i) * f;
 	}
 
 public: // -- operations -- //
 
+	// attempts to put the matrix into row echelon form
+	bool REF()
+	{
+		// for each row
+		for (std::size_t row = 0, col; row < r; ++row)
+		{
+			// find the leading entry
+			for (col = row; col < c; ++col)
+			{
+				// move all the zero-entries here and down in this col to the bottom
+				for (std::size_t top = row, bottom = r - 1; ;)
+				{
+					// wind top to next zero entry
+					for (; top < r && (*this)(top, col) != 0; ++top);
+					// wind bottom to next nonzero entry
+					for (; bottom > row && (*this)(bottom, col) == 0; --bottom);
 
+					// if they're still valid, perform the swap
+					if (top < bottom) swapRows(top, bottom);
+					// otherwise, we're done sorting
+					else break;
+				}
+
+				// if after sorting this element is nonzero, it is the leading entry
+				if ((*this)(row, col) != 0) break;
+			}
+			// if we didn't find a leading entry, the rest of the matrix is zeroes (so we're done)
+			if(col == c) return true;
+
+			// make this row's leading entry a 1 via row division
+			divRow(row, (*this)(row, col));
+
+			// use this row to eliminate the lower rows
+			for (std::size_t j = row + 1; j < r && (*this)(j, col) != 0; ++j)
+				subRowMult(j, row, (*this)(j, col));
+		}
+
+		// successfully converted to REF
+		return true;
+	}
 };
+
+// -- io -- //
+
+template<typename T>
+std::ostream &operator<<(std::ostream &ostr, const Matrix<T> m)
+{
+	for (std::size_t row = 0; row < m.rows(); ++row)
+	{
+		for (std::size_t col = 0; col < m.cols(); ++col)
+			ostr << std::setw(10) << m(row, col) << ' ';
+
+		ostr << '\n';
+	}
+
+	return ostr;
+}
+
+// -- operator definitions -- //
 
 // adds matrix b to matrix a
 // throws MatrixSizeError if matricies are of different sizes
