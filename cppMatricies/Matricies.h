@@ -9,7 +9,14 @@
 
 struct MatrixSizeError : std::exception
 {
-	virtual const char *what() const override { return "Matrix had invalid size"; }
+private:
+	const char *msg;
+
+public:
+	MatrixSizeError() : msg("") {}
+	MatrixSizeError(const char *_msg) : msg(_msg) {}
+
+	virtual const char *what() const override { return msg; }
 };
 
 template<typename T>
@@ -231,6 +238,37 @@ public: // -- operations -- //
 		// successfully converted to REF
 		return r;
 	}
+
+	// attempts to find the inverse of the matrix. returns true if successful and stores inverse in <dest>
+	bool inverse(Matrix &dest) const
+	{
+		if (r != c) throw MatrixSizeError("Only square matricies are invertible");
+
+		Matrix util(r, 2 * c); // make a wide matrix
+
+		// fill left side with current matrix and right side with identity matrix
+		for (std::size_t row = 0; row < r; ++row)
+			for (std::size_t col = 0; col < c; ++col)
+			{
+				util(row, col) = (*this)(row, col);
+				util(row + r, col) = row == col ? 1 : 0;
+			}
+
+		// if putting util matrix into rref has full rank, inversion was successful
+		if (util.RREF() == r)
+		{
+			// allocate dest
+			dest.resize(r, c);
+
+			// copy inverse (right side) to dest
+			for (std::size_t row = 0; row < r; ++row)
+				for (std::size_t col = 0; col < c; ++col)
+					dest(row, col) = util(row + r, col);
+
+			return true;
+		}
+		else return false;
+	}
 };
 
 // -- io -- //
@@ -257,7 +295,7 @@ template<typename T>
 static Matrix<T> &operator+=(Matrix<T> &a, const Matrix<T> &b)
 {
 	// ensure sizes are ok
-	if (a.r != b.r || a.c != b.c) throw MatrixSizeError();
+	if (a.r != b.r || a.c != b.c) throw MatrixSizeError("Matrix addition requires the matricies be of same size");
 
 	for (std::size_t row = 0; row < r; ++row)
 		for (std::size_t col = 0; col < c; ++col)
@@ -278,7 +316,7 @@ template<typename T>
 static Matrix<T> &operator-=(Matrix<T> &a, const Matrix<T> &b)
 {
 	// ensure sizes are ok
-	if (a.r != b.r || a.c != b.c) throw MatrixSizeError();
+	if (a.r != b.r || a.c != b.c) throw MatrixSizeError("Matrix subtraction requires the matricies be of same size");
 
 	for (std::size_t row = 0; row < r; ++row)
 		for (std::size_t col = 0; col < c; ++col)
@@ -320,7 +358,7 @@ template<typename T>
 static Matrix<T> operator*(const Matrix<T> &lhs, const Matrix<T> &rhs)
 {
 	// matricies must be compatible
-	if (lhs.cols() != rhs.rows()) throw MatrixSizeError();
+	if (lhs.cols() != rhs.rows()) throw MatrixSizeError("Matrix multiplication requires lhs #cols equal rhs #rows");
 
 	Matrix<T> res(lhs.rows(), rhs.cols()); // allocate the result
 	T dot; // the destination of the dot product (potentially-large)
