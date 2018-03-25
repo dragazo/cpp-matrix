@@ -17,7 +17,7 @@ private:
 	const char *msg;
 
 public:
-	MatrixSizeError() : msg("") {}
+	MatrixSizeError() : msg("Matrix Size Error") {}
 	MatrixSizeError(const char *_msg) : msg(_msg) {}
 
 	virtual const char *what() const override { return msg; }
@@ -28,11 +28,7 @@ class Matrix
 {
 public: // -- enums / etc -- //
 
-	// the result of a row reduction operation
-	/*enum RRResult
-	{
-		None = 0, REF = 1, RREF = 3
-	};*/
+
 
 private: // -- data -- //
 
@@ -55,7 +51,27 @@ public: // -- ctor / dtor / asgn -- //
 		if (rows == 0 || cols == 0) r = c = 0;
 	}
 
-	// due to using std::vector for the data, default cpy ctor / dtor / asgn are sufficient
+	Matrix(const Matrix &other) = default;
+	// constructs from another matrix
+	// other is guaranteed to be empty() afterwards
+	Matrix(Matrix &&other) : r(other.r), c(other.c), data(std::move(other.data))
+	{
+		// empty other matrix
+		other.r = other.c = 0;
+	}
+
+	Matrix &operator=(const Matrix &other) = default;
+	// copies from another matrix via move semantics
+	// equivalent to swapping the contents of the matricies
+	Matrix &operator=(Matrix &&other)
+	{
+		using std::swap; // ADL idiom
+
+		// mov asgn swap idiom
+		swap(r, other.r);
+		swap(c, other.c);
+		swap(data, other.data);
+	}
 
 public: // -- utilities -- //
 
@@ -70,18 +86,22 @@ public: // -- utilities -- //
 
 	// returns true if the matrix is square
 	bool square() const { return r == c; }
+
 	// returns true if the matrix is empty
 	bool empty() const { return r == 0; }
+	// empties the matrix
+	bool clear()
+	{
+		r = c = 0;
+		data.clear();
+	}
 
-	// resizes the matrix
+	// resizes the matrix to the specified dimensions
+	// resizing to 0xn or nx0 is equivalent to calling clear()
 	void resize(std::size_t rows, std::size_t cols)
 	{
-		// if either dimension was zero, both are zero
-		if (rows == 0 || cols == 0)
-		{
-			r = c = 0;
-			data.resize(0);
-		}
+		// if either dimension was zero, clear matrix
+		if (rows == 0 || cols == 0) clear();
 		// otherwise resize as usual
 		else
 		{
@@ -199,10 +219,9 @@ public: // -- operations -- //
 		}
 	}
 
-	// returns the <row><col> minor (i.e. the result of removing row <row> and col <col>)
+	// returns the <row><col> submatrix (i.e. the result of removing row <row> and col <col>)
 	// throws MatrixSizeError if matrix is empty
-	// also throws by det()
-	Matrix minor(std::size_t row, std::size_t col) const
+	Matrix submatrix(std::size_t row, std::size_t col) const
 	{
 		if (r == 0) throw MatrixSizeError("Cannot take a minor from an empty matrix");
 
@@ -227,13 +246,34 @@ public: // -- operations -- //
 
 		return res;
 	}
-	// returns the <row><col> cofactor (i.e. (-1)^(row+col) * (row, col) * minor(row,col).det() )
+	// returns the <row><col> minor (i.e. submatrix(row, col).det() )
+	// throws by submatrix()
+	T minor(std::size_t row, std::size_t col) const
+	{
+		return submatrix(row, col).det();
+	}
+	// returns the <row><col> cofactor (i.e. (-1)^(row+col) * (row,col) * minor(row,col) )
 	// throws by minor()
 	T cofactor(std::size_t row, std::size_t col) const
 	{
-		return ((row + col) & 1 ? -1 : 1) * self(row, col) * minor(row, col).det();
+		return ((row + col) & 1 ? -1 : 1) * self(row, col) * minor(row, col);
 	}
-	// returns the adjugate matrix (i.e. matrix of cofactors)
+
+	// returns the cofactor matrix of this matrix
+	// throws by cofactor()
+	Matrix cofactorMatrix() const
+	{
+		// allocate the result
+		Matrix res(r, c);
+
+		// fill with cofactors
+		for (std::size_t row = 0; row < r; ++row)
+			for (std::size_t col = 0; col < c; ++col)
+				res(row, col) = cofactor(row, col);
+
+		return res;
+	}
+	// returns the adjugate matrix (i.e. transpose of cofactor matrix)
 	// throws by cofactor()
 	Matrix adjugate() const
 	{
@@ -243,7 +283,38 @@ public: // -- operations -- //
 		// fill with cofactors
 		for (std::size_t row = 0; row < r; ++row)
 			for (std::size_t col = 0; col < c; ++col)
-				res(row, col) = cofactor(row, col);
+				res(col, row) = cofactor(row, col);
+
+		return res;
+	}
+
+	// transposes the matrix
+	void transpose()
+	{
+		using std::swap; // ADL idiom
+
+		// as a special case, row/column vectors will have identical flattened structures
+		if (r == 1 || c == 1) swap(r, c);
+		// square matricies can use simple swaps
+		else if (r == c)
+		{
+			for (std::size_t row = 0; row < r; ++row)
+				for (std::size_t col = row + 1; col < c; ++col)
+					swap(self(row, col), self(col, row));
+		}
+		// otherwise it's comlicated. just copy a transposed version
+		else *this = std::move(transposed());
+	}
+	// returns a copy of this matrix that has been transposed
+	Matrix transposed() const
+	{
+		// allocate the matrix
+		Matrix res(c, r);
+
+		// copy the transposed entries
+		for (std::size_t row = 0; row < r; ++row)
+			for (std::size_t col = 0; col < c; ++col)
+				res(col, row) = self(row, col);
 
 		return res;
 	}
@@ -331,7 +402,7 @@ public: // -- operations -- //
 			// make this row's leading entry a 1 via row division //
 
 			// store lead entry for efficiency
-			T temp = self(row, col); 
+			T temp = self(row, col);
 			// all elements to left of leading entry are zeros, so we can ignore them
 			for (std::size_t j = col + 1; j < c; ++j) self(row, j) /= temp;
 			// setting leading entry to 1 is more efficient and prevents rounding errors
@@ -424,7 +495,7 @@ std::ostream &operator<<(std::ostream &ostr, const Matrix<T> &m)
 // adds matrix b to matrix a
 // throws MatrixSizeError if matricies are of different sizes
 template<typename T>
-static Matrix<T> &operator+=(Matrix<T> &a, const Matrix<T> &b)
+Matrix<T> &operator+=(Matrix<T> &a, const Matrix<T> &b)
 {
 	// ensure sizes are ok
 	if (a.r != b.r || a.c != b.c) throw MatrixSizeError("Matrix addition requires the matricies be of same size");
@@ -436,7 +507,7 @@ static Matrix<T> &operator+=(Matrix<T> &a, const Matrix<T> &b)
 	return a;
 }
 template<typename T>
-static Matrix<T> operator+(const Matrix<T> &a, const Matrix<T> &b)
+Matrix<T> operator+(const Matrix<T> &a, const Matrix<T> &b)
 {
 	Matrix<T> res = a;
 	return res += b;
@@ -445,7 +516,7 @@ static Matrix<T> operator+(const Matrix<T> &a, const Matrix<T> &b)
 // subtracts matrix b from matrix a
 // throws MatrixSizeError if matricies are of different sizes
 template<typename T>
-static Matrix<T> &operator-=(Matrix<T> &a, const Matrix<T> &b)
+Matrix<T> &operator-=(Matrix<T> &a, const Matrix<T> &b)
 {
 	// ensure sizes are ok
 	if (a.r != b.r || a.c != b.c) throw MatrixSizeError("Matrix subtraction requires the matricies be of same size");
@@ -457,7 +528,7 @@ static Matrix<T> &operator-=(Matrix<T> &a, const Matrix<T> &b)
 	return a;
 }
 template<typename T>
-static Matrix<T> operator-(const Matrix<T> &a, const Matrix<T> &b)
+Matrix<T> operator-(const Matrix<T> &a, const Matrix<T> &b)
 {
 	Matrix<T> res = a;
 	return res -= b;
@@ -465,20 +536,20 @@ static Matrix<T> operator-(const Matrix<T> &a, const Matrix<T> &b)
 
 // multiplies the matrix by a scalar
 template<typename T>
-static Matrix<T> &operator*=(Matrix<T> &m, const T &f)
+Matrix<T> &operator*=(Matrix<T> &m, const T &f)
 {
 	for (std::size_t row = 0; row < r; ++row)
 		for (std::size_t col = 0; col < c; ++col)
 			a(row, col) *= f;
 }
 template<typename T>
-static Matrix<T> operator*(const Matrix<T> &m, const T &f)
+Matrix<T> operator*(const Matrix<T> &m, const T &f)
 {
 	Matrix<T> res = m;
 	return res *= f;
 }
 template<typename T>
-static Matrix<T> operator*(const T &f, const Matrix<T> &m)
+Matrix<T> operator*(const T &f, const Matrix<T> &m)
 {
 	Matrix<T> res = m;
 	return res *= f;
@@ -487,7 +558,7 @@ static Matrix<T> operator*(const T &f, const Matrix<T> &m)
 // multiplies matrix lhs by matrix rhs
 // throws MatrixSizeError if matricies are incompatible
 template<typename T>
-static Matrix<T> operator*(const Matrix<T> &lhs, const Matrix<T> &rhs)
+Matrix<T> operator*(const Matrix<T> &lhs, const Matrix<T> &rhs)
 {
 	// matricies must be compatible
 	if (lhs.cols() != rhs.rows()) throw MatrixSizeError("Matrix multiplication requires lhs #cols equal rhs #rows");
@@ -512,9 +583,28 @@ static Matrix<T> operator*(const Matrix<T> &lhs, const Matrix<T> &rhs)
 	return res;
 }
 template<typename T>
-static Matrix<T> operator*=(Matrix<T> &lhs, const Matrix<T> &rhs)
+Matrix<T> operator*=(Matrix<T> &lhs, const Matrix<T> &rhs)
 {
 	return *this = lhs * rhs;
 }
+
+// -- cmp operator definitions -- //
+
+// returns true if matricies are of same size and have identical contents
+template<typename T>
+bool operator==(const Matrix<T> &a, const Matrix<T> &b)
+{
+	// different sizes are unequal by definition
+	if (a.rows() != b.rows() || a.cols() != b.cols()) return false;
+
+	// otherwise must contain identical elements
+	for (std::size_t row = 0row < a.rows(); ++row)
+		for (std::size_t col = 0; col < a.cols(); ++col)
+			if (a(row, col) != b(row, col)) return false;
+
+	return true;
+}
+template<typename T>
+bool operator!=(const Matrix<T> &a, const Matrix<T> &b) { return !(a == b); }
 
 #endif
