@@ -6,6 +6,10 @@
 #include <exception>
 #include <utility>
 #include <iostream>
+#include <type_traits>
+
+// macros for accessing <this> in more convenient ways
+#define self (*this)
 
 struct MatrixSizeError : std::exception
 {
@@ -134,40 +138,40 @@ public: // -- elementary row operations -- //
 		if (a == b) return;
 
 		for (std::size_t i = 0; i < c; ++i)
-			swap((*this)(a, i), (*this)(b, i));
+			swap(self(a, i), self(b, i));
 	}
 
 	// multiplies the elements in a row by a scalar
 	void multRow(std::size_t row, T f)
 	{
-		for (std::size_t i = 0; i < c; ++i) (*this)(row, i) *= f;
+		for (std::size_t i = 0; i < c; ++i) self(row, i) *= f;
 	}
 	// divides the elements in a row by a scalar
 	void divRow(std::size_t row, T f)
 	{
-		for (std::size_t i = 0; i < c; ++i) (*this)(row, i) /= f;
+		for (std::size_t i = 0; i < c; ++i) self(row, i) /= f;
 	}
 
 	// adds row <from> to row <to>
 	void addRow(std::size_t to, std::size_t from)
 	{
-		for (std::size_t i = 0; i < c; ++i) (*this)(to, i) += (*this)(from, i);
+		for (std::size_t i = 0; i < c; ++i) self(to, i) += self(from, i);
 	}
 	// subtracts row <from> from row <to>
 	void subRow(std::size_t to, std::size_t from)
 	{
-		for (std::size_t i = 0; i < c; ++i) (*this)(to, i) -= (*this)(from, i);
+		for (std::size_t i = 0; i < c; ++i) self(to, i) -= self(from, i);
 	}
 
 	// adds a multiple of row <from> to row <to>
 	void addRowMult(std::size_t to, std::size_t from, T f)
 	{
-		for (std::size_t i = 0; i < c; ++i) (*this)(to, i) += (*this)(from, i) * f;
+		for (std::size_t i = 0; i < c; ++i) self(to, i) += self(from, i) * f;
 	}
 	// subtracts a multiple of row <from> to row <to>
 	void subRowMult(std::size_t to, std::size_t from, T f)
 	{
-		for (std::size_t i = 0; i < c; ++i) (*this)(to, i) -= (*this)(from, i) * f;
+		for (std::size_t i = 0; i < c; ++i) self(to, i) -= self(from, i) * f;
 	}
 
 public: // -- operations -- //
@@ -181,8 +185,8 @@ public: // -- operations -- //
 
 		switch (r)
 		{
-		case 1: return (*this)(0, 0);
-		case 2: return (*this)(0, 0) * (*this)(1, 1) - (*this)(1, 0)*(*this)(0, 1);
+		case 1: return self(0, 0);
+		case 2: return self(0, 0) * self(1, 1) - self(1, 0)*self(0, 1);
 
 		default:
 			T sum = 0; // initialize sum to zero
@@ -209,16 +213,16 @@ public: // -- operations -- //
 		for (std::size_t _row = 0; _row < row; ++_row)
 		{
 			for (std::size_t _col = 0; _col < col; ++_col)
-				res(_row, _col) = (*this)(_row, _col);
+				res(_row, _col) = self(_row, _col);
 			for (std::size_t _col = col + 1; _col < c; ++_col)
-				res(_row, _col - 1) = (*this)(_row, _col);
+				res(_row, _col - 1) = self(_row, _col);
 		}
 		for (std::size_t _row = row + 1; _row < r; ++_row)
 		{
 			for (std::size_t _col = 0; _col < col; ++_col)
-				res(_row - 1, _col) = (*this)(_row, _col);
+				res(_row - 1, _col) = self(_row, _col);
 			for (std::size_t _col = col + 1; _col < c; ++_col)
-				res(_row - 1, _col - 1) = (*this)(_row, _col);
+				res(_row - 1, _col - 1) = self(_row, _col);
 		}
 
 		return res;
@@ -227,7 +231,7 @@ public: // -- operations -- //
 	// throws by minor()
 	T cofactor(std::size_t row, std::size_t col) const
 	{
-		return ((row + col) & 1 ? -1 : 1) * (*this)(row, col) * minor(row, col).det();
+		return ((row + col) & 1 ? -1 : 1) * self(row, col) * minor(row, col).det();
 	}
 	// returns the adjugate matrix (i.e. matrix of cofactors)
 	// throws by cofactor()
@@ -257,9 +261,9 @@ public: // -- operations -- //
 				for (std::size_t top = row, bottom = r - 1; ;)
 				{
 					// wind top to next zero entry
-					for (; top < bottom && (*this)(top, col) != 0; ++top);
+					for (; top < bottom && self(top, col) != 0; ++top);
 					// wind bottom to next nonzero entry
-					for (; top < bottom && (*this)(bottom, col) == 0; --bottom);
+					for (; top < bottom && self(bottom, col) == 0; --bottom);
 
 					// if they're still valid, perform the swap
 					if (top < bottom) swapRows(top, bottom);
@@ -268,21 +272,32 @@ public: // -- operations -- //
 				}
 
 				// if after sorting this element is nonzero, it is the leading entry
-				if ((*this)(row, col) != 0) break;
+				if (self(row, col) != 0) break;
 			}
 			// if we didn't find a leading entry, the rest of the matrix is zeroes (so we're done)
-			if(col == c) return row;
+			if (col == c) return row;
 
-			// make this row's leading entry a 1 via row division
-			divRow(row, (*this)(row, col));
+			// make this row's leading entry a 1 via row division //
 
-			// use this row to eliminate the lower rows
-			for (std::size_t j = row + 1; j < r && (*this)(j, col) != 0; ++j)
-				subRowMult(j, row, (*this)(j, col));
+			// store lead entry for efficiency
+			T temp = self(row, col);
+			// all elements to left of leading entry are zeros, so we can ignore them
+			for (std::size_t j = col + 1; j < c; ++j) self(row, j) /= temp;
+			// setting leading entry to 1 is more efficient and prevents rounding errors
+			self(row, col) = 1;
+
+			// use this row to eliminate the lower rows //
+
+			for (std::size_t j = row + 1; j < r && self(j, col) != 0; ++j)
+			{
+				// store factor to subtract by for efficiency
+				temp = self(j, col);
+				// all source elements to left of col are zero, so we can ignore them
+				for (std::size_t k = col + 1; k < c; ++k) self(j, k) -= self(row, k) * temp;
+				// setting entry to 0 is more efficient and prevents rounding errors
+				self(j, col) = 0;
+			}
 		}
-
-		// successfully converted to REF
-		return r;
 	}
 	// puts the matrix into reduced row echelon form. returns the rank of the matrix
 	std::size_t RREF()
@@ -297,10 +312,10 @@ public: // -- operations -- //
 				for (std::size_t top = row, bottom = r - 1; ;)
 				{
 					// wind top to next zero entry
-					for (; top < bottom && (*this)(top, col) != 0; ++top);
+					for (; top < bottom && self(top, col) != 0; ++top);
 					// wind bottom to next nonzero entry
-					for (; top < bottom && (*this)(bottom, col) == 0; --bottom);
-
+					for (; top < bottom && self(bottom, col) == 0; --bottom);
+					
 					// if they're still valid, perform the swap
 					if (top < bottom) swapRows(top, bottom);
 					// otherwise, we're done sorting
@@ -308,24 +323,49 @@ public: // -- operations -- //
 				}
 
 				// if after sorting this element is nonzero, it is the leading entry
-				if ((*this)(row, col) != 0) break;
+				if (self(row, col) != 0) break;
 			}
 			// if we didn't find a leading entry, the rest of the matrix is zeroes (so we're done)
 			if (col == c) return row;
 
-			// make this row's leading entry a 1 via row division
-			divRow(row, (*this)(row, col));
+			// make this row's leading entry a 1 via row division //
 
-			// use this row to eliminate the higher rows
+			// store lead entry for efficiency
+			T temp = self(row, col); 
+			// all elements to left of leading entry are zeros, so we can ignore them
+			for (std::size_t j = col + 1; j < c; ++j) self(row, j) /= temp;
+			// setting leading entry to 1 is more efficient and prevents rounding errors
+			self(row, col) = 1;
+
+			// use this row to eliminate the higher rows //
+
 			for (std::size_t j = 0; j < row; ++j)
-				if ((*this)(j, col) != 0) subRowMult(j, row, (*this)(j, col));
+			{
+				// store factor to subtract by for efficiency
+				temp = self(j, col);
+				if (temp != 0)
+				{
+					// all source elements to left of col are zero, so we can ignore them
+					for (std::size_t k = col + 1; k < c; ++k) self(j, k) -= self(row, k) * temp;
+					// setting entry to 0 is more efficient and prevents rounding errors
+					self(j, col) = 0;
+				}
+			}
 
-			// use this row to eliminate the lower rows
-			for (std::size_t j = row + 1; j < r && (*this)(j, col) != 0; ++j)
-				subRowMult(j, row, (*this)(j, col));
+			// use this row to eliminate the lower rows //
+
+			for (std::size_t j = row + 1; j < r && self(j, col) != 0; ++j)
+			{
+				// store factor to subtract by for efficiency
+				temp = self(j, col);
+				// all source 
+				for (std::size_t k = col + 1; k < c; ++k) self(j, k) -= self(row, k) * temp;
+				// setting entry to 0 is more efficient and prevents rounding errors
+				self(j, col) = 0;
+			}
 		}
 
-		// successfully converted to REF
+		// successfully converted to RREF
 		return r;
 	}
 
@@ -342,7 +382,7 @@ public: // -- operations -- //
 		for (std::size_t row = 0; row < r; ++row)
 			for (std::size_t col = 0; col < c; ++col)
 			{
-				util(row, col) = (*this)(row, col);
+				util(row, col) = self(row, col);
 				util(row, col + c) = row == col ? 1 : 0;
 			}
 
