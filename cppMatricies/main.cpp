@@ -8,22 +8,23 @@ int main()
 {
 	try
 	{
-		Matrix<double> a(3, 3);
-		Matrix<double> b(3, 3);
+		Matrix<double> a(100,100);
+		//Matrix<double> b(3, 3);
 
 		forall(a)
 		{
-			a(row, col) = row + col;
-			b(row, col) = (row + col) * 20;
+			a(row, col) = std::tan(100 * row + col);
+			//b(row, col) = (row + col) * 20;
 		}
 
-		std::cout << a << '\n' << b << '\n';
+		std::cout << a << '\n';// << b << '\n';
 
 		std::cout << "\n---------\n\n";
 
-		a.cat_rows(b);
+		double det;
 
-		std::cout << a << '\n';
+		std::cout << "rank: " << a.REF(&det) << "\ndet: ";
+		std::cout << det << '\n' << a << '\n';
 	}
 	catch (const std::exception &ex)
 	{

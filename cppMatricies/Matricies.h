@@ -27,9 +27,9 @@ public:
 
 // represents a mathematical matrix
 // T is assumed to be a POD value-type
-// T is required to be implicitly copy constructable and copy assignable from T or int
-// T is required to have binary operators +-*/ defined, capable of accepting T as both arguments
-// T is required to have != and == defined and be comparable to int on either side of the operator
+// T is required to be explicitly constructable from int
+// T is required to have binary operators +, -, *, / (and their compound assignments), ==, and != defined, capable of accepting T as both arguments 
+// T is required to have unary operator - defined, capable of accepting T as its argument
 template<typename T>
 class Matrix
 {
@@ -42,11 +42,109 @@ private: // -- data -- //
 	std::vector<T> data; // the elements in the array
 	std::size_t r, c;    // number of rows / cols
 
-	
-
 private: // -- helpers -- //
 
+	// performs a generalized matrix reduction, used by (for example) REF, RREF, and det
+	// <kill_upper> specifies if the reduction should also eliminate the upper triangle (e.g. RREF) (should not be used with <det>)
+	// <det>        the location to store the calculated determinant, or null to ignore (only meaningful if square matrix and <kill_upper> is false) (should not be used with <kill_upper>)
+	// <only_det>   specifies that we're only interested in the determinant (i.e. will exit early if found to be zero, meaning rank may not be correct) (should not be used with <kill_upper>)
+	// returns the rank of the matrix (unless <only_det> triggered an early exit)
+	// complexity: O(n^2) worst case, O(n) best case
+	std::size_t reduce(bool kill_upper, T *det, bool only_det)
+	{
+		using std::swap; // ADL idiom
 
+		T _det = (T)1; // initialize the resulting determinant
+
+		// for each row
+		for (std::size_t row = 0, col; row < r; ++row)
+		{
+			// find the leading entry
+			for (col = row; col < c; ++col)
+			{
+				// move all the zero-entries here and down in this col to the bottom
+				for (std::size_t top = row, bottom = r - 1; ;)
+				{
+					// wind top to next zero entry
+					for (; top < bottom && self(top, col) != 0; ++top);
+					// wind bottom to next nonzero entry
+					for (; top < bottom && self(bottom, col) == 0; --bottom);
+
+					// if they're still valid, perform the swap
+					if (top < bottom)
+					{
+						// swap the rows (beginning at col because it will be the least point that can have non-zero entries beneath)
+						for (std::size_t i = col; i < c; ++i) swap(self(top, i), self(bottom, i));
+						_det = -_det; // this negates the determinant
+					}
+					// otherwise, we're done sorting
+					else break;
+				}
+
+				// if after sorting this element is nonzero, it is the leading entry
+				if (self(row, col) != (T)0) break;
+				// otherwise we're missing a leading entry in the main diagonal, which means det is zero
+				else if (only_det)
+				{
+					if (det) *det = (T)0;
+					return row;
+				}
+			}
+			// if we didn't find a leading entry, the rest of the matrix is zeroes (so we're done)
+			if (col == c)
+			{
+				if (det) *det = (T)0; // no leading entry means a row of all zero, which means a det of zero
+				return row;
+			}
+
+			// make this row's leading entry a 1 via row division //
+
+			// store lead entry for efficiency
+			T temp = self(row, col);
+			// all elements to left of leading entry are zeros, so we can ignore them
+			for (std::size_t i = col + 1; i < c; ++i) self(row, i) /= temp;
+			// setting leading entry to 1 is more efficient and prevents rounding errors
+			self(row, col) = (T)1;
+			_det *= temp; // account for this entry in the determinant
+
+			// use this row to eliminate the higher rows //
+
+			// if killing top as well
+			if (kill_upper)
+			{
+				for (std::size_t j = 0; j < row; ++j)
+				{
+					// store factor to subtract by for efficiency
+					temp = self(j, col);
+					if (temp != 0)
+					{
+						// all source elements to left of col are zero, so we can ignore them
+						for (std::size_t k = col + 1; k < c; ++k) self(j, k) -= self(row, k) * temp;
+						// setting entry to 0 is more efficient and prevents rounding errors
+						self(j, col) = (T)0;
+					}
+				}
+			}
+
+			// use this row to eliminate the lower rows //
+
+			for (std::size_t j = row + 1; j < r && self(j, col) != 0; ++j)
+			{
+				// store factor to subtract by for efficiency
+				temp = self(j, col);
+				// all source 
+				for (std::size_t k = col + 1; k < c; ++k) self(j, k) -= self(row, k) * temp;
+				// setting entry to 0 is more efficient and prevents rounding errors
+				self(j, col) = 0;
+			}
+		}
+
+		// export the calculated determinant
+		if (det) *det = _det;
+
+		// successfully converted to RREF
+		return r;
+	}
 
 public: // -- ctor / dtor / asgn -- //
 
@@ -58,7 +156,8 @@ public: // -- ctor / dtor / asgn -- //
 		#endif
 	}
 
-	// creates a rows x cols matrix
+	// creates a matrix with the specified dimensions
+	// element contents are undefined
 	Matrix(std::size_t rows, std::size_t cols) : r(rows), c(cols), data(rows * cols)
 	{
 		// if either dimension was zero, both are zero
@@ -140,9 +239,9 @@ public: // -- utilities -- //
 		data.clear();
 	}
 
-	// resizes the matrix to the specified dimensions
+	// resizes the matrix to the specified dimensions, not making any attempt to preserve the contents
 	// the contents of the result are undefined except that resizing to nx0 or 0xn is equivalent to clear() and resizing to same size is no-op
-	void resize(std::size_t rows, std::size_t cols)
+	void resize_dump(std::size_t rows, std::size_t cols)
 	{
 		// if either dimension was zero, clear matrix
 		if (rows == 0 || cols == 0) clear();
@@ -153,6 +252,43 @@ public: // -- utilities -- //
 			c = cols;
 			data.resize(rows * cols);
 		}
+	}
+	// resizes the matrix to the specified dimensions, preserving the contents after the call
+	// this ensures the i,j elements before and after are equal over the region in which both sizes were defined
+	// reducing a dimension truncates those values and expanded sections are undefined. no change is no-op
+	// complexity: O(n) in the difference of number of elements
+	void resize(std::size_t rows, std::size_t cols)
+	{
+		// save previous size
+		std::size_t _rows = r, _cols = c;
+		// get the smallest size values
+		std::size_t min_r = (_rows < rows ? _rows : rows), min_c = (_cols < cols ? _cols : cols);
+
+		// resizing to same size is no-op
+		if (rows == _rows && cols == _cols) return;
+		// resizing a row or column vector is trivial due to using a flattened array
+		else if (rows == 1 && _rows == 1 || cols == 1 && _cols == 1) { resize_dump(rows, cols); return; }
+		// resizing to/from empty matrix is trivial
+		else if (empty() || rows == 0 || cols == 0) { resize_dump(rows, cols); return; }
+
+		// on to the juicy bits //
+
+		// because we're using a flattened array, we only need to do some sewing if we changed #cols
+		if (cols != _cols)
+		{
+			// if we're gaining storage space, resize now (we'll need that space for reorganizing)
+			if (rows * cols > _rows * _cols) resize_dump(rows, cols);
+
+			// fix up the data
+			for (std::size_t from = (min_r - 1) * _cols, to = (min_r - 1) * cols; from >= _cols; from -= _cols, to -= cols)
+			{
+				// copy row entries starting at <from> to their new locations starting at <to>
+				for (std::size_t i = 0; i < min_c; ++i) data[to + i] = data[from + i];
+			}
+		}
+
+		// resize now (if we already did, this will just be no-op
+		resize_dump(rows, cols);
 	}
 	// requests the matrix to set aside space for the specified number of elements
 	void reserve(std::size_t count) { data.reserve(count); }
@@ -219,8 +355,6 @@ public: // -- utilities -- //
 	{
 		if (c != other.c) throw MatrixSizeError("Cannot vertically concatenate matricies with different #cols");
 
-		// because we're using a flattened array, we can just expand and tack it on the bottom
-		
 		std::size_t _r = r;     // store previous row count (also puts it on the stack, so faster access)
 		resize(r + other.r, c); // resize to accommodate other
 
@@ -235,18 +369,9 @@ public: // -- utilities -- //
 	{
 		if (r != other.r) throw MatrixSizeError("Cannot horizontally concatenate matricies with different #rows");
 
-		// because we're using a flattened array, we can't just tack it on like we can in cat_rows
-
 		std::size_t _c = c;     // store previous col count (also puts it on the stack, so faster access)
 		resize(r, c + other.c); // resize to accommodate other
 
-		// fix up our side
-		for (std::size_t from = (r - 1) * _c, to = (r - 1)*c; from >= _c; from -= _c, to -= c)
-		{
-			// copy row entries starting at <from> to their new locations starting at <to>
-			for (std::size_t i = 0; i < _c; ++i) data[to + i] = data[from + i];
-		}
-		
 		// add data from other
 		for (std::size_t row = 0; row < other.r; ++row)
 			for (std::size_t col = 0; col < other.c; ++col)
@@ -313,25 +438,17 @@ public: // -- operations -- //
 
 	// finds the determinant of the matrix
 	// throws MatrixSizeError if cannot find determinant or if matrix is empty
+	// complexity: O(n^2) worst case, O(n) best case
 	T det() const
 	{
 		if (r != c) throw MatrixSizeError("Only square matricies have a determinant");
 		if (r == 0) throw MatrixSizeError("Cannot take the determinant of an empty matrix");
 
-		switch (r)
-		{
-		case 1: return self(0, 0);
-		case 2: return self(0, 0) * self(1, 1) - self(1, 0)*self(0, 1);
-
-		default:
-			T sum = 0; // initialize sum to zero
-
-			// add cofactors along first row
-			for (std::size_t col = 0; col < c; ++col)
-				sum += cofactor(0, col);
-
-			return sum;
-		}
+		// use our handy dandy reduce function on a copy to find the determinant fancily
+		Matrix cpy = self;
+		T res;
+		cpy.reduce(false, &res, true);
+		return res;
 	}
 
 	// returns the <row><col> submatrix (i.e. the result of removing row <row> and col <col>)
@@ -456,125 +573,10 @@ public: // -- operations -- //
 	}
 
 	// puts the matrix into row echelon form. returns the rank of the matrix
-	std::size_t REF()
-	{
-		// for each row
-		for (std::size_t row = 0, col; row < r; ++row)
-		{
-			// find the leading entry
-			for (col = row; col < c; ++col)
-			{
-				// move all the zero-entries here and down in this col to the bottom
-				for (std::size_t top = row, bottom = r - 1; ;)
-				{
-					// wind top to next zero entry
-					for (; top < bottom && self(top, col) != 0; ++top);
-					// wind bottom to next nonzero entry
-					for (; top < bottom && self(bottom, col) == 0; --bottom);
-
-					// if they're still valid, perform the swap
-					if (top < bottom) swapRows(top, bottom);
-					// otherwise, we're done sorting
-					else break;
-				}
-
-				// if after sorting this element is nonzero, it is the leading entry
-				if (self(row, col) != 0) break;
-			}
-			// if we didn't find a leading entry, the rest of the matrix is zeroes (so we're done)
-			if (col == c) return row;
-
-			// make this row's leading entry a 1 via row division //
-
-			// store lead entry for efficiency
-			T temp = self(row, col);
-			// all elements to left of leading entry are zeros, so we can ignore them
-			for (std::size_t j = col + 1; j < c; ++j) self(row, j) /= temp;
-			// setting leading entry to 1 is more efficient and prevents rounding errors
-			self(row, col) = 1;
-
-			// use this row to eliminate the lower rows //
-
-			for (std::size_t j = row + 1; j < r && self(j, col) != 0; ++j)
-			{
-				// store factor to subtract by for efficiency
-				temp = self(j, col);
-				// all source elements to left of col are zero, so we can ignore them
-				for (std::size_t k = col + 1; k < c; ++k) self(j, k) -= self(row, k) * temp;
-				// setting entry to 0 is more efficient and prevents rounding errors
-				self(j, col) = 0;
-			}
-		}
-	}
+	// optionally also returns the determinant (only meaningful if square matrix)
+	std::size_t REF(T *det = nullptr) { return reduce(false, det, false); }
 	// puts the matrix into reduced row echelon form. returns the rank of the matrix
-	std::size_t RREF()
-	{
-		// for each row
-		for (std::size_t row = 0, col; row < r; ++row)
-		{
-			// find the leading entry
-			for (col = row; col < c; ++col)
-			{
-				// move all the zero-entries here and down in this col to the bottom
-				for (std::size_t top = row, bottom = r - 1; ;)
-				{
-					// wind top to next zero entry
-					for (; top < bottom && self(top, col) != 0; ++top);
-					// wind bottom to next nonzero entry
-					for (; top < bottom && self(bottom, col) == 0; --bottom);
-					
-					// if they're still valid, perform the swap
-					if (top < bottom) swapRows(top, bottom);
-					// otherwise, we're done sorting
-					else break;
-				}
-
-				// if after sorting this element is nonzero, it is the leading entry
-				if (self(row, col) != 0) break;
-			}
-			// if we didn't find a leading entry, the rest of the matrix is zeroes (so we're done)
-			if (col == c) return row;
-
-			// make this row's leading entry a 1 via row division //
-
-			// store lead entry for efficiency
-			T temp = self(row, col);
-			// all elements to left of leading entry are zeros, so we can ignore them
-			for (std::size_t j = col + 1; j < c; ++j) self(row, j) /= temp;
-			// setting leading entry to 1 is more efficient and prevents rounding errors
-			self(row, col) = 1;
-
-			// use this row to eliminate the higher rows //
-
-			for (std::size_t j = 0; j < row; ++j)
-			{
-				// store factor to subtract by for efficiency
-				temp = self(j, col);
-				if (temp != 0)
-				{
-					// all source elements to left of col are zero, so we can ignore them
-					for (std::size_t k = col + 1; k < c; ++k) self(j, k) -= self(row, k) * temp;
-					// setting entry to 0 is more efficient and prevents rounding errors
-					self(j, col) = 0;
-				}
-			}
-
-			// use this row to eliminate the lower rows //
-
-			for (std::size_t j = row + 1; j < r && self(j, col) != 0; ++j)
-			{
-				// store factor to subtract by for efficiency
-				temp = self(j, col);
-				// all source 
-				for (std::size_t k = col + 1; k < c; ++k) self(j, k) -= self(row, k) * temp;
-				// setting entry to 0 is more efficient and prevents rounding errors
-				self(j, col) = 0;
-			}
-		}
-
-		// successfully converted to RREF
-		return r;
-	}
+	std::size_t RREF() { return reduce(true, nullptr, false); }
 
 	// attempts to find the inverse of the matrix. if successful, stores inverse in <dest> and returns true
 	// throws MatrixSizeError if matrix is not square or is empty
@@ -597,7 +599,7 @@ public: // -- operations -- //
 		if (util.RREF() == r)
 		{
 			// allocate dest
-			dest.resize(r, c);
+			dest.resize_dump(r, c);
 
 			// copy inverse (right side) to dest
 			for (std::size_t row = 0; row < r; ++row)
