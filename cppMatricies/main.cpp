@@ -2,22 +2,28 @@
 #include <iomanip>
 #include "Matricies.h"
 
+#define forall(m) for(std::size_t row = 0; row < m.rows(); ++row) for(std::size_t col = 0; col < m.cols(); ++col)
+
 int main()
 {
 	try
 	{
-		Matrix<double> m(3, 4);
-		Matrix<double> other;
+		Matrix<double> a(3, 3);
+		Matrix<double> b(3, 3);
 
-		m(0, 0) = 1; m(0, 1) = 5; m(0, 2) = 0; m(0, 3) = 7;
-		m(1, 0) = 1; m(1, 1) = 2; m(1, 2) = 1; m(1, 3) = 7;
-		m(2, 0) = 5; m(2, 1) = 0; m(2, 2) = 1; m(2, 3) = 0;
-		//m(3, 0) = 1; m(3, 1) = 2; m(3, 2) = 1; m(3, 3) = 8;
+		forall(a)
+		{
+			a(row, col) = row + col;
+			b(row, col) = (row + col) * 20;
+		}
 
-		std::cout << m << '\n';
+		std::cout << a << '\n' << b << '\n';
 
-		//std::cout << "det:      " << m.det() << '\n';
-		std::cout << "rank:     " << m.RREF() << '\n' << m << '\n';
+		std::cout << "\n---------\n\n";
+
+		a.cat_rows(b);
+
+		std::cout << a << '\n';
 	}
 	catch (const std::exception &ex)
 	{
