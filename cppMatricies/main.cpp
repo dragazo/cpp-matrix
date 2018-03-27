@@ -8,7 +8,7 @@ int main()
 {
 	try
 	{
-		Matrix<double> a(100,100);
+		Matrix<double> a(4,4);
 		//Matrix<double> b(3, 3);
 
 		forall(a)
@@ -17,14 +17,9 @@ int main()
 			//b(row, col) = (row + col) * 20;
 		}
 
-		std::cout << a << '\n';// << b << '\n';
+		std::cout << "\n----------\n\n";
 
-		std::cout << "\n---------\n\n";
-
-		double det;
-
-		std::cout << "rank: " << a.REF(&det) << "\ndet: ";
-		std::cout << det << '\n' << a << '\n';
+		std::cout << a << '\n';
 	}
 	catch (const std::exception &ex)
 	{

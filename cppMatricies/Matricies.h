@@ -44,19 +44,22 @@ private: // -- data -- //
 
 private: // -- helpers -- //
 
-	// performs a generalized matrix reduction, used by (for example) REF, RREF, and det
-	// <kill_upper> specifies if the reduction should also eliminate the upper triangle (e.g. RREF) (should not be used with <det>)
-	// <det>        the location to store the calculated determinant, or null to ignore (only meaningful if square matrix and <kill_upper> is false) (should not be used with <kill_upper>)
-	// <only_det>   specifies that we're only interested in the determinant (i.e. will exit early if found to be zero, meaning rank may not be correct) (should not be used with <kill_upper>)
-	// returns the rank of the matrix (unless <only_det> triggered an early exit)
-	// complexity: O(n^2) worst case, O(n) best case
+	// performs a generalized matrix reduction via elementary row operations, used by (for example) REF, RREF, and det
+	// also returns the determinant of the matrix if square, or of the square matrix resulting from truncating a rectangular matrix to the largest square matrix it can contain
+	// <kill_upper> specifies if the reduction should also eliminate the upper triangle (e.g. RREF)
+	// <det>        the location to store the calculated determinant, or null to ignore
+	// <only_det>   specifies that we're only interested in the determinant (i.e. will exit early if found to be zero, in which case rank may not be correct)
+	// returns      the rank of the matrix (unless <only_det> triggered an early exit)
+	// complexity   O(n^2)
 	std::size_t reduce(bool kill_upper, T *det, bool only_det)
 	{
 		using std::swap; // ADL idiom
 
-		T _det = (T)1; // initialize the resulting determinant
+		T _det = (T)1;        // initialize the resulting determinant
+		T temp;               // storage location for leading entry
 
 		// for each row
+		
 		for (std::size_t row = 0, col; row < r; ++row)
 		{
 			// find the leading entry
@@ -66,9 +69,9 @@ private: // -- helpers -- //
 				for (std::size_t top = row, bottom = r - 1; ;)
 				{
 					// wind top to next zero entry
-					for (; top < bottom && self(top, col) != 0; ++top);
+					for (; top < bottom && self(top, col) != (T)0; ++top);
 					// wind bottom to next nonzero entry
-					for (; top < bottom && self(bottom, col) == 0; --bottom);
+					for (; top < bottom && self(bottom, col) == (T)0; --bottom);
 
 					// if they're still valid, perform the swap
 					if (top < bottom)
@@ -100,7 +103,7 @@ private: // -- helpers -- //
 			// make this row's leading entry a 1 via row division //
 
 			// store lead entry for efficiency
-			T temp = self(row, col);
+			temp = self(row, col);
 			// all elements to left of leading entry are zeros, so we can ignore them
 			for (std::size_t i = col + 1; i < c; ++i) self(row, i) /= temp;
 			// setting leading entry to 1 is more efficient and prevents rounding errors
@@ -112,30 +115,35 @@ private: // -- helpers -- //
 			// if killing top as well
 			if (kill_upper)
 			{
-				for (std::size_t j = 0; j < row; ++j)
+				for (std::size_t i = 0; i < row; ++i)
 				{
 					// store factor to subtract by for efficiency
-					temp = self(j, col);
-					if (temp != 0)
+					temp = self(i, col);
+					if (temp != (T)0)
 					{
 						// all source elements to left of col are zero, so we can ignore them
-						for (std::size_t k = col + 1; k < c; ++k) self(j, k) -= self(row, k) * temp;
+						for (std::size_t j = col + 1; j < c; ++j) self(i, j) -= self(row, j) * temp;
 						// setting entry to 0 is more efficient and prevents rounding errors
-						self(j, col) = (T)0;
+						self(i, col) = (T)0;
 					}
 				}
 			}
 
 			// use this row to eliminate the lower rows //
-
-			for (std::size_t j = row + 1; j < r && self(j, col) != 0; ++j)
+			
+			for (std::size_t i = row + 1; i < r; ++i)
 			{
 				// store factor to subtract by for efficiency
-				temp = self(j, col);
-				// all source 
-				for (std::size_t k = col + 1; k < c; ++k) self(j, k) -= self(row, k) * temp;
-				// setting entry to 0 is more efficient and prevents rounding errors
-				self(j, col) = 0;
+				temp = self(i, col);
+				if (temp != (T)0)
+				{
+					// all source elements to left of col are zero, so we can ignore them
+					for (std::size_t j = col + 1; j < c; ++j) self(i, j) -= self(row, j) * temp;
+					// setting entry to 0 is more efficient and prevents rounding errors
+					self(i, col) = (T)0;
+				}
+				// if it was zero, we've reached the zero segment at the bottom, so we can stop
+				else break;
 			}
 		}
 
@@ -438,24 +446,38 @@ public: // -- operations -- //
 
 	// finds the determinant of the matrix
 	// throws MatrixSizeError if cannot find determinant or if matrix is empty
-	// complexity: O(n^2) worst case, O(n) best case
-	T det() const
+	// complexity: O(n^2)
+	T det() const &
 	{
 		if (r != c) throw MatrixSizeError("Only square matricies have a determinant");
 		if (r == 0) throw MatrixSizeError("Cannot take the determinant of an empty matrix");
-
+		
 		// use our handy dandy reduce function on a copy to find the determinant fancily
 		Matrix cpy = self;
 		T res;
 		cpy.reduce(false, &res, true);
 		return res;
 	}
+	T det() &&
+	{
+		if (r != c) throw MatrixSizeError("Only square matricies have a determinant");
+		if (r == 0) throw MatrixSizeError("Cannot take the determinant of an empty matrix");
+
+		// use our handy dandy reduce function to find the determinant fancily
+		T res;
+		reduce(false, &res, true);
+		return res;
+	}
+
+	// returns true if the matrix is invertible
+	bool invertible() const & { return r != 0 && r == c && det() != (T)0; }
+	bool invertible() && { return r != 0 && r == c && std::move(self).det() != (T)0; }
 
 	// returns the <row><col> submatrix (i.e. the result of removing row <row> and col <col>)
 	// throws MatrixSizeError if matrix is empty
 	Matrix submatrix(std::size_t row, std::size_t col) const
 	{
-		if (r == 0) throw MatrixSizeError("Cannot take a minor from an empty matrix");
+		if (r == 0) throw MatrixSizeError("Cannot take a submatrix from an empty matrix");
 
 		// allocate the result
 		Matrix res(r - 1, c - 1);
@@ -479,7 +501,7 @@ public: // -- operations -- //
 		return res;
 	}
 	// returns the <row><col> minor (i.e. submatrix(row, col).det() )
-	// throws by submatrix()
+	// throws by submatrix() and det()
 	T minor(std::size_t row, std::size_t col) const
 	{
 		return submatrix(row, col).det();
@@ -492,33 +514,67 @@ public: // -- operations -- //
 	}
 
 	// returns the cofactor matrix of this matrix
-	// throws by cofactor()
+	// throws MatrixSizeError if non-square matrix or empty
+	// also throws by cofactor()
+	// complexity: O(n^2) if invertible, otherwise O(n^4)
 	Matrix cofactorMatrix() const
 	{
-		// allocate the result
-		Matrix res(r, c);
+		if (r != c) throw MatrixSizeError("Cannot take cofactor of non-square matrix");
+		if (r == 0) throw MatrixSizeError("Cannot take cofactor of empty matrix");
 
-		// fill with cofactors
-		for (std::size_t row = 0; row < r; ++row)
-			for (std::size_t col = 0; col < c; ++col)
-				res(row, col) = cofactor(row, col);
+		// allocate space for result
+		Matrix res(r, r);
+		T _det;
+
+		// definition of adjugate: A * adj(A) = det(A) * I
+		// if A is invertible:     adj(A) = det(A) * inv(A)
+		// then, since the adjugate is transpose of the cofactor matrix, just transpose adjugate
+		if (inverse(res, &_det))
+		{
+			res *= _det;
+			res.transpose();
+		}
+		// otherwise we must resort to the other definition: adj(A) = cofactorMatrix(A).transpose()
+		// then, since the adjugate is transpose of the cofactor matrix, just transpose adjugate
+		else
+		{
+			// fill with cofactors
+			for (std::size_t row = 0; row < r; ++row)
+				for (std::size_t col = 0; col < c; ++col)
+					res(row, col) = cofactor(row, col);
+		}
 
 		return res;
 	}
 	// returns the adjugate matrix (i.e. transpose of cofactor matrix)
-	// throws by cofactor()
+	// throws MatrixSizeError if non-square matrix or empty
+	// also throws by cofactor()
+	// complexity: O(n^2) if invertible, otherwise O(n^4)
 	Matrix adjugate() const
 	{
-		// allocate the result
-		Matrix res(r, c);
+		if (r != c) throw MatrixSizeError("Cannot take adjugate of non-square matrix");
+		if (r == 0) throw MatrixSizeError("Cannot take adjugate of empty matrix");
 
-		// fill with cofactors
-		for (std::size_t row = 0; row < r; ++row)
-			for (std::size_t col = 0; col < c; ++col)
-				res(col, row) = cofactor(row, col);
+		// allocate space for result
+		Matrix res(r, r);
+		T _det;
+
+		// definition of adjugate: A * adj(A) = det(A) * I
+		// if A is invertible:     adj(A) = det(A) * inv(A)
+		if (inverse(res, &_det)) res *= _det;
+		// otherwise we must resort to the other definition: adj(A) = cofactorMatrix(A).transpose()
+		else
+		{
+			// fill with cofactors
+			for (std::size_t row = 0; row < r; ++row)
+				for (std::size_t col = 0; col < c; ++col)
+					res(col, row) = cofactor(row, col);
+		}
 
 		return res;
 	}
+
+	// CHECK FOR OPTIMIZATIONS IN TRANSPOSE:
 
 	// transposes the matrix
 	Matrix &transpose()
@@ -534,7 +590,7 @@ public: // -- operations -- //
 				for (std::size_t col = row + 1; col < c; ++col)
 					swap(self(row, col), self(col, row));
 		}
-		// otherwise it's comlicated. just copy a transposed version
+		// otherwise it's complicated. just copy a transposed version
 		else self = std::move(transposed());
 
 		return self;
@@ -573,14 +629,18 @@ public: // -- operations -- //
 	}
 
 	// puts the matrix into row echelon form. returns the rank of the matrix
-	// optionally also returns the determinant (only meaningful if square matrix)
+	// optionally also returns the determinant of the largest square matrix that this matrix can contain
+	// complexity: O(n^2)
 	std::size_t REF(T *det = nullptr) { return reduce(false, det, false); }
 	// puts the matrix into reduced row echelon form. returns the rank of the matrix
-	std::size_t RREF() { return reduce(true, nullptr, false); }
+	// complexity: O(n^2)
+	std::size_t RREF(T *det = nullptr) { return reduce(true, det, false); }
 
 	// attempts to find the inverse of the matrix. if successful, stores inverse in <dest> and returns true
+	// optionally also returns the determinant of the largest square matrix that this matrix can contain
 	// throws MatrixSizeError if matrix is not square or is empty
-	bool inverse(Matrix &dest) const
+	// complexity: O(n^2)
+	bool inverse(Matrix &dest, T *det = nullptr) const
 	{
 		if (r != c) throw MatrixSizeError("Only square matricies are invertible");
 		if (r == 0) throw MatrixSizeError("Cannot take the inverse of an empty matrix");
@@ -596,7 +656,8 @@ public: // -- operations -- //
 			}
 
 		// if putting util matrix into rref has full rank, inversion was successful
-		if (util.RREF() == r)
+		// short-circuit on zero det, as this means it's not invertible anyway
+		if (util.reduce(true, det, true) == r)
 		{
 			// allocate dest
 			dest.resize_dump(r, c);
@@ -611,9 +672,10 @@ public: // -- operations -- //
 		else return false;
 	}
 	// attempts to invert the matrix. if successful, stores inverse in this matrix and returns true
-	// equivalent to m.inverse(m)
+	// optionally also returns the determinant of the largest square matrix that this matrix can contain
+	// equivalent to m.inverse(m, det)
 	// throws by inverse()
-	bool invert() { return inverse(self); }
+	bool invert(T *det = nullptr) { return inverse(self, det); }
 };
 
 // -- io -- //
@@ -657,9 +719,9 @@ template<typename T> Matrix<T> &operator+=(Matrix<T> &a, const Matrix<T> &b)
 	return a;
 }
 template<typename T> Matrix<T> operator+(const Matrix<T> &a, const Matrix<T> &b) { Matrix<T> res = a; res += b; return res; }
-template<typename T> Matrix<T> &&operator+(Matrix<T> &&a, const Matrix<T> &b) { return std::move(a += b); }
-template<typename T> Matrix<T> &&operator+(const Matrix<T> &a, Matrix<T> &&b) { return std::move(b += a); }
-template<typename T> Matrix<T> &&operator+(Matrix<T> &&a, Matrix<T> &&b) { return std::move(a += b); }
+template<typename T> Matrix<T> &&operator+(Matrix<T> &&a, const Matrix<T> &b) { a += b; return std::move(a); }
+template<typename T> Matrix<T> &&operator+(const Matrix<T> &a, Matrix<T> &&b) { b += a; return std::move(b); }
+template<typename T> Matrix<T> &&operator+(Matrix<T> &&a, Matrix<T> &&b) { a += b; return std::move(a); }
 
 // subtracts matrix b from matrix a
 // throws MatrixSizeError if matricies are of different sizes
@@ -675,9 +737,9 @@ template<typename T> Matrix<T> &operator-=(Matrix<T> &a, const Matrix<T> &b)
 	return a;
 }
 template<typename T> Matrix<T> operator-(const Matrix<T> &a, const Matrix<T> &b) { Matrix<T> res = a; res -= b; return res; }
-template<typename T> Matrix<T> &&operator-(Matrix<T> &&a, const Matrix<T> &b) { return std::move(a -= b); }
-template<typename T> Matrix<T> &&operator-(const Matrix<T> &a, Matrix<T> &&b) { return std::move(b -= a); }
-template<typename T> Matrix<T> &&operator-(Matrix<T> &&a, Matrix<T> &&b) { return std::move(a -= b); }
+template<typename T> Matrix<T> &&operator-(Matrix<T> &&a, const Matrix<T> &b) { a -= b; return std::move(a); }
+template<typename T> Matrix<T> &&operator-(const Matrix<T> &a, Matrix<T> &&b) { b -= a; return std::move(b); }
+template<typename T> Matrix<T> &&operator-(Matrix<T> &&a, Matrix<T> &&b) { a -= b; return std::move(a); }
 
 // multiplies the matrix by a scalar
 template<typename T> Matrix<T> &operator*=(Matrix<T> &m, T f)
@@ -690,8 +752,8 @@ template<typename T> Matrix<T> &operator*=(Matrix<T> &m, T f)
 }
 template<typename T> Matrix<T> operator*(const Matrix<T> &m, T f) { Matrix<T> res = m; res *= f; return res; }
 template<typename T> Matrix<T> operator*(T f, const Matrix<T> &m) { Matrix<T> res = m; res *= f; return res; }
-template<typename T> Matrix<T> &&operator*(Matrix<T> &&m, T f) { return std::move(m *= f); }
-template<typename T> Matrix<T> &&operator*(T f, Matrix<T> &&m) { return std::move(m *= f); }
+template<typename T> Matrix<T> &&operator*(Matrix<T> &&m, T f) { m *= f; return std::move(m); }
+template<typename T> Matrix<T> &&operator*(T f, Matrix<T> &&m) { m *= f; return std::move(m); }
 
 // multiplies matrix lhs by matrix rhs
 // throws MatrixSizeError if matricies are incompatible
