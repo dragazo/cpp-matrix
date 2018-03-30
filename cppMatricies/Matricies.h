@@ -39,8 +39,9 @@ public: // -- enums / etc -- //
 
 private: // -- data -- //
 
-	std::vector<T> data; // the elements in the array
-	std::size_t r, c;    // number of rows / cols
+	T *data;          // the elements in the array
+	std::size_t cap;  // capacity of array
+	std::size_t r, c; // number of rows / cols
 
 private: // -- helpers -- //
 
@@ -58,41 +59,30 @@ private: // -- helpers -- //
 		T _det = (T)1;        // initialize the resulting determinant
 		T temp;               // storage location for leading entry
 
-		// for each row
-		
-		for (std::size_t row = 0, col; row < r; ++row)
+		// iterate through each row
+		for (std::size_t row = 0, col = 0; row < r; ++row, ++col)
 		{
-			// find the leading entry
-			for (col = row; col < c; ++col)
+			// search for a leading entry
+			for (; col < c && self(row, col) == (T)0; ++col)
 			{
-				// move all the zero-entries here and down in this col to the bottom
-				for (std::size_t top = row, bottom = r - 1; ;)
-				{
-					// wind top to next zero entry
-					for (; top < bottom && self(top, col) != (T)0; ++top);
-					// wind bottom to next nonzero entry
-					for (; top < bottom && self(bottom, col) == (T)0; --bottom);
-
-					// if they're still valid, perform the swap
-					if (top < bottom)
+				// look down the column for a row to swap in
+				for(std::size_t i = row + 1; i < r; ++i)
+					if (self(i, col) != (T)0)
 					{
-						// swap the rows (beginning at col because it will be the least point that can have non-zero entries beneath)
-						for (std::size_t i = col; i < c; ++i) swap(self(top, i), self(bottom, i));
-						_det = -_det; // this negates the determinant
+						// swap this row in
+						for (std::size_t j = col; j < c; ++j) swap(self(row, j), self(i, j));
+						// negate det due to a row swap
+						_det = -_det;
+						// and we found our leading entry
+						goto found_entry;
 					}
-					// otherwise, we're done sorting
-					else break;
-				}
 
-				// if after sorting this element is nonzero, it is the leading entry
-				if (self(row, col) != (T)0) break;
 				// otherwise we're missing a leading entry in the main diagonal, which means det is zero
-				else if (only_det)
-				{
-					if (det) *det = (T)0;
-					return row;
-				}
+				// setting col to c makes it think there was a row of zeroes, and thus det of zero
+				if (only_det) col = c;
 			}
+			found_entry:
+
 			// if we didn't find a leading entry, the rest of the matrix is zeroes (so we're done)
 			if (col == c)
 			{
@@ -112,7 +102,7 @@ private: // -- helpers -- //
 
 			// use this row to eliminate the higher rows //
 
-			// if killing top as well
+			// only do this if requested
 			if (kill_upper)
 			{
 				for (std::size_t i = 0; i < row; ++i)
@@ -142,8 +132,6 @@ private: // -- helpers -- //
 					// setting entry to 0 is more efficient and prevents rounding errors
 					self(i, col) = (T)0;
 				}
-				// if it was zero, we've reached the zero segment at the bottom, so we can stop
-				else break;
 			}
 		}
 
@@ -157,7 +145,7 @@ private: // -- helpers -- //
 public: // -- ctor / dtor / asgn -- //
 
 	// creates an empty matrix
-	Matrix() : r(0), c(0)
+	Matrix() : data(nullptr), cap(0), r(0), c(0)
 	{
 		#if __MATRIX_DIAGNOSTICS
 		std::cout << "def ctor\n";
@@ -166,28 +154,51 @@ public: // -- ctor / dtor / asgn -- //
 
 	// creates a matrix with the specified dimensions
 	// element contents are undefined
-	Matrix(std::size_t rows, std::size_t cols) : r(rows), c(cols), data(rows * cols)
+	Matrix(std::size_t rows, std::size_t cols)
 	{
 		// if either dimension was zero, both are zero
-		if (rows == 0 || cols == 0) r = c = 0;
+		if (rows == 0 || cols == 0)
+		{
+			cap = r = c = 0;
+			data = nullptr;
+		}
+		else
+		{
+			cap = rows * cols;
+			data = new T[cap];
+			r = rows;
+			c = cols;
+		}
 
 		#if __MATRIX_DIAGNOSTICS
 		std::cout << "arg ctor\n";
 		#endif
 	}
 
-	Matrix(const Matrix &other) : r(other.r), c(other.c), data(other.data)
+	~Matrix()
 	{
+		// free the array
+		delete[] data;
+	}
+
+	Matrix(const Matrix &other) : r(other.r), c(other.c)
+	{
+		// allocate and copy the bare minimum
+		cap = r * c;
+		data = cap != 0 ? new T[cap] : nullptr;
+		for (std::size_t i = 0; i < cap; ++i) data[i] = other.data[i];
+
 		#if __MATRIX_DIAGNOSTICS
 		std::cout << "cpy ctor\n";
 		#endif
 	}
-	// constructs from another matrix
+	// constructs from another matrix by using its allocated resources
 	// other is guaranteed to be empty() afterwards
-	Matrix(Matrix &&other) : r(other.r), c(other.c), data(std::move(other.data))
+	Matrix(Matrix &&other) : data(other.data), cap(other.cap), r(other.r), c(other.c)
 	{
 		// empty other matrix
-		other.r = other.c = 0;
+		other.cap = other.r = other.c = 0;
+		other.data = nullptr;
 
 		#if __MATRIX_DIAGNOSTICS
 		std::cout << "mov ctor\n";
@@ -196,9 +207,10 @@ public: // -- ctor / dtor / asgn -- //
 
 	Matrix &operator=(const Matrix &other)
 	{
-		r = other.r;
-		c = other.c;
-		data = other.data;
+		// size up to fit other
+		resize_dump(other.r, other.c);
+		// copy the data over
+		for (std::size_t i = 0; i < r * c; ++i) data[i] = other.data[i];
 
 		#if __MATRIX_DIAGNOSTICS
 		std::cout << "cpy asgn\n";
@@ -213,9 +225,10 @@ public: // -- ctor / dtor / asgn -- //
 		using std::swap; // ADL idiom
 
 		// mov asgn swap idiom
+		swap(data, other.data);
+		swap(cap, other.cap);
 		swap(r, other.r);
 		swap(c, other.c);
-		swap(data, other.data);
 
 		#if __MATRIX_DIAGNOSTICS
 		std::cout << "mov asgn\n";
@@ -231,40 +244,36 @@ public: // -- utilities -- //
 	std::size_t cols() const { return c; }
 
 	// returns the number of elements in the matrix
-	std::size_t size() const { return data.size(); }
+	std::size_t size() const { return r * c; }
 	// returns the current capacity of the matrix
-	std::size_t capacity() const { return data.capacity(); }
+	std::size_t capacity() const { return cap; }
 
-	// returns true if the matrix is square
+	// returns true if the matrix is square (including empty)
 	bool square() const { return r == c; }
 
 	// returns true if the matrix is empty
 	bool empty() const { return r == 0; }
-	// empties the matrix
-	void clear()
-	{
-		r = c = 0;
-		data.clear();
-	}
+	// sets the matrix to the "empty" state
+	void clear() { r = c = 0; }
 
 	// resizes the matrix to the specified dimensions, not making any attempt to preserve the contents
 	// the contents of the result are undefined except that resizing to nx0 or 0xn is equivalent to clear() and resizing to same size is no-op
 	void resize_dump(std::size_t rows, std::size_t cols)
 	{
-		// if either dimension was zero, clear matrix
-		if (rows == 0 || cols == 0) clear();
-		// otherwise resize as usual
-		else
+		r = rows;
+		c = cols;
+
+		// reallocate if we don't have enough space
+		if (rows * cols > cap)
 		{
-			r = rows;
-			c = cols;
-			data.resize(rows * cols);
+			cap = rows * cols;
+			delete[] data; // delete on null is defined to be no-op
+			data = new T[cap];
 		}
 	}
 	// resizes the matrix to the specified dimensions, preserving the contents after the call
 	// this ensures the i,j elements before and after are equal over the region in which both sizes were defined
 	// reducing a dimension truncates those values and expanded sections are undefined. no change is no-op
-	// complexity: O(n) in the difference of number of elements
 	void resize(std::size_t rows, std::size_t cols)
 	{
 		// save previous size
@@ -272,21 +281,15 @@ public: // -- utilities -- //
 		// get the smallest size values
 		std::size_t min_r = (_rows < rows ? _rows : rows), min_c = (_cols < cols ? _cols : cols);
 
-		// resizing to same size is no-op
-		if (rows == _rows && cols == _cols) return;
-		// resizing a row or column vector is trivial due to using a flattened array
-		else if (rows == 1 && _rows == 1 || cols == 1 && _cols == 1) { resize_dump(rows, cols); return; }
-		// resizing to/from empty matrix is trivial
-		else if (empty() || rows == 0 || cols == 0) { resize_dump(rows, cols); return; }
+		// apply the size change
+		r = rows;
+		c = cols;
+		reserve(rows * cols);
 
-		// on to the juicy bits //
-
-		// because we're using a flattened array, we only need to do some sewing if we changed #cols
-		if (cols != _cols)
+		// because we're using a flattened array, we only need to do some sewing if we changed #cols and it's not a row vector conversion
+		// also weed out the degenerate case of resizing to/from empty
+		if (cols != _cols && (_rows != 1 || rows != 1) && (min_r != 0 && min_c != 0))
 		{
-			// if we're gaining storage space, resize now (we'll need that space for reorganizing)
-			if (rows * cols > _rows * _cols) resize_dump(rows, cols);
-
 			// fix up the data
 			for (std::size_t from = (min_r - 1) * _cols, to = (min_r - 1) * cols; from >= _cols; from -= _cols, to -= cols)
 			{
@@ -294,15 +297,42 @@ public: // -- utilities -- //
 				for (std::size_t i = 0; i < min_c; ++i) data[to + i] = data[from + i];
 			}
 		}
-
-		// resize now (if we already did, this will just be no-op
-		resize_dump(rows, cols);
 	}
-	// requests the matrix to set aside space for the specified number of elements
-	void reserve(std::size_t count) { data.reserve(count); }
 
-	// requests the matrix to remove unused allocated space (request may be declined)
-	void shrink_to_fit() { data.shrink_to_fit(); }
+	// requests the matrix to set aside space for the specified number of elements
+	// contents of the matrix are preserved
+	void reserve(std::size_t count)
+	{
+		// if we don't have enough space
+		if (count > cap)
+		{
+			// generate the new array
+			cap = count;
+			T *newdata = new T[cap];
+			for (std::size_t i = 0; i < r * c; ++i) newdata[i] = data[i];
+
+			// replace old array
+			delete[] data;
+			data = newdata;
+		}
+	}
+	// requests the matrix to remove unused allocated space
+	// contents of the matrix are preserved
+	void shrink_to_fit()
+	{
+		// if we have too much space
+		if (r * c < cap)
+		{
+			// generate the new array
+			cap = r * c;
+			T *newdata = new T[cap];
+			for (std::size_t i = 0; i < cap; ++i) newdata[i] = data[i];
+
+			// replace old array
+			delete[] data;
+			data = newdata;
+		}
+	}
 
 	// returns the item at the specified index
 	T &operator[](std::size_t index) { return data[index]; }
@@ -402,7 +432,7 @@ public: // -- elementary row operations -- //
 	{
 		using std::swap; // ADL idiom
 
-		// early exit if swapping to same destination
+		// early exit if swapping to same destination (one if statement potentially prevents c unnecessary swaps)
 		if (a == b) return;
 
 		for (std::size_t i = 0; i < c; ++i)
@@ -591,12 +621,12 @@ public: // -- operations -- //
 					swap(self(row, col), self(col, row));
 		}
 		// otherwise it's complicated. just copy a transposed version
-		else self = std::move(transposed());
+		else self = getTranspose();
 
 		return self;
 	}
 	// returns a copy of this matrix that has been transposed
-	Matrix transposed() const
+	Matrix getTranspose() const
 	{
 		// allocate the matrix
 		Matrix res(c, r);

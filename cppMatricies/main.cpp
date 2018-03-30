@@ -8,18 +8,28 @@ int main()
 {
 	try
 	{
-		Matrix<double> a(4,4);
-		//Matrix<double> b(3, 3);
+		Matrix<double> m;
+		std::size_t rows, cols;
+		double det;
 
-		forall(a)
+		while (true)
 		{
-			a(row, col) = std::tan(100 * row + col);
-			//b(row, col) = (row + col) * 20;
+			std::cout << "\n\nrows: "; std::cin >> rows;
+			std::cout << "cols: "; std::cin >> cols;
+
+			if (std::cin.fail()) { std::cin.clear(); std::cin.ignore(32767, '\n'); continue; }
+
+			m.resize_dump(rows, cols);
+			std::cout << "data: ";
+			for (std::size_t i = 0; i < rows * cols; ++i) std::cin >> m[i];
+
+			if (std::cin.fail()) { std::cin.clear(); std::cin.ignore(32767, '\n'); continue; }
+
+			std::cout << '\n' << m;
+			std::cout << "rank: " << m.RREF(&det) << '\n';
+			std::cout << "det:  " << det << '\n';
+			std::cout << m << '\n';
 		}
-
-		std::cout << "\n----------\n\n";
-
-		std::cout << a << '\n';
 	}
 	catch (const std::exception &ex)
 	{
