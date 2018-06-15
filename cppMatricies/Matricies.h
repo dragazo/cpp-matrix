@@ -7,12 +7,23 @@
 #include <utility>
 #include <iostream>
 #include <type_traits>
+#include <complex>
+#include <cmath>
+
+#define __MATRIX_DIAGNOSTICS 0
+
+// ---------------------------------------------------
+
+// ---------------------------------------------------
+
+// ---------------------------------------------------
 
 // macros for accessing <this> in more convenient ways
 #define self (*this)
 
-#define __MATRIX_DIAGNOSTICS 0
+using std::conj;
 
+// a special error message 
 struct MatrixSizeError : std::exception
 {
 private:
@@ -25,6 +36,43 @@ public:
 	virtual const char *what() const override { return msg; }
 };
 
+// defines a static bool <value> that is true iff there is an overload of conj - in global/std namespaces or via ADL -
+// with form T conj(T), where the argument/return value may be by-value or (potentially const) reference
+template<typename T>
+struct has_conj
+{
+private:
+	// dereferencing nullptr is ok here becuase it's in a decltype expression
+	template<typename C> static constexpr char test(decltype(conj(*(T*)0))) { return 0; }
+	template<typename C> static constexpr long test(...) { return 0; }
+
+public:
+	static constexpr bool value = sizeof(test<T>(*(T*)0)) == sizeof(char);
+};
+
+template<typename T> class Matrix;
+
+// computes the member-wise conjugate of the matrix.
+// a function named conj(T) in the global namespace - or reachable via ADL - or std::conj(std::complex) is used.
+// if such a function does not exist, does nothing.
+template<typename T, std::enable_if_t<!has_conj<T>::value, int> = 0>
+Matrix<T> &conj(Matrix<T> &matrix) { /* this case has no conj function */ return matrix; }
+template<typename T, std::enable_if_t<has_conj<T>::value, int> = 0>
+Matrix<T> &conj(Matrix<T> &matrix)
+{
+	// in this case we're safe to use conj() function
+	for (std::size_t i = 0; i < matrix.size(); ++i)
+		matrix[i] = conj(matrix[i]); // cast here is to silence warnings
+
+	return matrix;
+}
+
+// ---------------------------------------------------
+
+// ---------------------------------------------------
+
+// ---------------------------------------------------
+
 // represents a mathematical matrix
 // T is assumed to be a POD value-type
 // T is required to be explicitly constructable from int
@@ -33,10 +81,6 @@ public:
 template<typename T>
 class Matrix
 {
-public: // -- enums / etc -- //
-
-
-
 private: // -- data -- //
 
 	T *data;          // the elements in the array
@@ -260,43 +304,55 @@ public: // -- utilities -- //
 	// the contents of the result are undefined except that resizing to nx0 or 0xn is equivalent to clear() and resizing to same size is no-op
 	void resize_dump(std::size_t rows, std::size_t cols)
 	{
+		// resizing to 0xn or nx0 is equivalent to clear()
+		if (rows == 0 || cols == 0) { clear(); return; }
+
 		r = rows;
 		c = cols;
 
 		// reallocate if we don't have enough space
-		if (rows * cols > cap)
+		if (r * c > cap)
 		{
-			cap = rows * cols;
-			delete[] data; // delete on null is defined to be no-op
+			cap = r * c;
+			delete[] data; // delete on null is defined to be safe
 			data = new T[cap];
 		}
 	}
 	// resizes the matrix to the specified dimensions, preserving the contents after the call
 	// this ensures the i,j elements before and after are equal over the region in which both sizes were defined
-	// reducing a dimension truncates those values and expanded sections are undefined. no change is no-op
+	// reducing a dimension truncates those values and expanded sections are undefined. no change is no-op.
+	// resizing to 0xn or nx0 is equivalent to clear().
 	void resize(std::size_t rows, std::size_t cols)
 	{
-		// save previous size
-		std::size_t _rows = r, _cols = c;
-		// get the smallest size values
-		std::size_t min_r = (_rows < rows ? _rows : rows), min_c = (_cols < cols ? _cols : cols);
+		// resizing to 0xn or nx0 is equivalent to clear()
+		if (rows == 0 || cols == 0) { clear(); return; }
+
+		// if the array is too big or it had a breaking #col change (not a row vector or empty) then we need to reallocate
+		if (rows * cols > cap || (cols != c && (r != 1 || rows != 1) && r != 0))
+		{
+			// in the specific case where cap was too small, fix that problem
+			if (rows * cols > cap) cap = rows * cols;
+
+			// we need to reallocate - use cap to be invisible (algorithms may be optimized for a specific capacity)
+			T *newdata = new T[cap];
+
+			// get min size for each dimension (only this portion will be preserved)
+			std::size_t min_r = rows < r ? rows : r;
+			std::size_t min_c = cols < c ? cols : c;
+
+			// copy over the data
+			for (std::size_t row = 0; row < min_r; ++row)
+				for (std::size_t col = 0; col < min_c; ++col)
+					newdata[row * cols + col] = data[row * c + col];
+
+			// replace old array
+			delete[] data;
+			data = newdata;
+		}
 
 		// apply the size change
 		r = rows;
 		c = cols;
-		reserve(rows * cols);
-
-		// because we're using a flattened array, we only need to do some sewing if we changed #cols and it's not a row vector conversion
-		// also weed out the degenerate case of resizing to/from empty
-		if (cols != _cols && (_rows != 1 || rows != 1) && (min_r != 0 && min_c != 0))
-		{
-			// fix up the data
-			for (std::size_t from = (min_r - 1) * _cols, to = (min_r - 1) * cols; from >= _cols; from -= _cols, to -= cols)
-			{
-				// copy row entries starting at <from> to their new locations starting at <to>
-				for (std::size_t i = 0; i < min_c; ++i) data[to + i] = data[from + i];
-			}
-		}
 	}
 
 	// requests the matrix to set aside space for the specified number of elements
@@ -325,7 +381,7 @@ public: // -- utilities -- //
 		{
 			// generate the new array
 			cap = r * c;
-			T *newdata = new T[cap];
+			T *newdata = cap > 0 ? new T[cap] : nullptr;
 			for (std::size_t i = 0; i < cap; ++i) newdata[i] = data[i];
 
 			// replace old array
@@ -351,10 +407,19 @@ public: // -- utilities -- //
 		return data[index];
 	}
 
-	// returns the index of the specified row and col as if in a flattened array
-	std::size_t index(std::size_t row, std::size_t col) const { return row * c + col; }
+	// returns the index of the specified row and col for operator[]
+	std::size_t index(std::size_t row, std::size_t col) const
+	{
+		return row * c + col;
+	}
 	// gets the row and col of the specified index
-	void rowcol(std::size_t index, std::size_t &row, std::size_t &col) { row = index / c; col = index % c; }
+	void rowcol(std::size_t index, std::size_t &row, std::size_t &col) const
+	{
+		// if matrix is empty, just return 0,0
+		if (c == 0) row = col = 0;
+		// otherwise compute the position
+		else { row = index / c; col = index % c; }
+	}
 
 	// gets the element at the specified row and col
 	T &operator()(std::size_t row, std::size_t col) { return data[row * c + col]; }
@@ -424,6 +489,28 @@ public: // -- utilities -- //
 	// throws by cat_cols() member func
 	static Matrix cat_cols(const Matrix &left, const Matrix &right) { Matrix res = left; left.cat_cols(right); return res; }
 	static Matrix &&cat_cols(Matrix &&left, const Matrix &right) { left.cat_cols(right); return std::move(top); }
+
+	// computes the tensor product of the left matrix by the right matrix
+	static Matrix tensor_product(const Matrix &left, const Matrix &right)
+	{
+		// allocate th matrix
+		Matrix res(left.r * right.r, left.c * right.c);
+
+		// compute the tensor product entries
+		for (std::size_t left_row = 0; left_row < left.r; ++left_row)
+			for (std::size_t left_col = 0; left_col < left.c; ++left_col)
+			{
+				// hold on to row position in result (shorthand)
+				const std::size_t row = left_row * right.r;
+				const std::size_t col = left_col * right.c;
+
+				for (std::size_t right_row = 0; right_row < right.r; ++right_row)
+					for (std::size_t right_col = 0; right_col < right.c; ++right_col)
+						res(row + right_row, col + right_col) = left(left_row, left_col) * right(right_row, right_col);
+			}
+
+		return res;
+	}
 
 public: // -- elementary row operations -- //
 
@@ -639,6 +726,30 @@ public: // -- operations -- //
 		return res;
 	}
 
+	// computes the member-wise conjugate of the matrix by calling a function named conj(T) in the global namespace or std::conj(std::complex)
+	// if such a function does not exist, does nothing
+	Matrix &conj() { return ::conj(self); }
+	// returns a copy of the matrix that has been conjugated
+	Matrix conj() const
+	{
+		Matrix res = self;
+		res.conj();
+		return res; // returning local directly aids optimizer elision
+	}
+
+	// performs the adjoint (aka conjugate transpose) of the matrix, not to be confused with the adjugate
+	Matrix &adjoint()
+	{
+		return self.conj().transpose();
+	}
+	// returns a copy of the matrix that has been adjointed
+	Matrix getAdjoint() const
+	{
+		Matrix res = self;
+		res.adjoint();
+		return res; // returning local directly aids optimizer elision
+	}
+
 	// extracts row <row> from the matrix (as a row vector)
 	Matrix getrow(std::size_t row) const
 	{
@@ -707,6 +818,8 @@ public: // -- operations -- //
 	// throws by inverse()
 	bool invert(T *det = nullptr) { return inverse(self, det); }
 };
+
+// -- misc -- //
 
 // -- io -- //
 

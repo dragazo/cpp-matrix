@@ -8,13 +8,13 @@ int main()
 {
 	try
 	{
-		Matrix<double> m;
+		Matrix<double> m, temp;
 		std::size_t rows, cols;
 		double det;
-
+		
 		while (true)
 		{
-			std::cout << "\n\nrows: "; std::cin >> rows;
+			std::cout << "rows: "; std::cin >> rows;
 			std::cout << "cols: "; std::cin >> cols;
 
 			if (std::cin.fail()) { std::cin.clear(); std::cin.ignore(32767, '\n'); continue; }
@@ -25,10 +25,29 @@ int main()
 
 			if (std::cin.fail()) { std::cin.clear(); std::cin.ignore(32767, '\n'); continue; }
 
+			temp = m;
+
 			std::cout << '\n' << m;
 			std::cout << "rank: " << m.RREF(&det) << '\n';
 			std::cout << "det:  " << det << '\n';
 			std::cout << m << '\n';
+			std::cout << "conj:\n" << temp.conj() << '\n';
+
+			std::cout << "\n\n";
+
+			/*
+			m.resize(3, 3);
+			forall(m) m(row, col) = (row + col + 1) + row * col;
+
+			std::cout << m << '\n';
+
+			m.resize(4, 4); std::cout << m << '\n';
+			m.resize(5, 5); std::cout << m << '\n';
+			m.resize(2, 2); std::cout << m << '\n';
+			m.resize(6, 6); std::cout << m << '\n';
+
+			std::cin.get();
+			*/
 		}
 	}
 	catch (const std::exception &ex)
