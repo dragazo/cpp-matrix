@@ -9,8 +9,17 @@
 #include <type_traits>
 #include <complex>
 #include <cmath>
+#include <memory>
+#include <emmintrin.h>
 
+// if true, logs ctor/dtor/asgn/etc.
 #define __MATRIX_DIAGNOSTICS 0
+
+// if true, uses vector registers if the type permits (float, double, various int widths)
+#define __MATRIX_USE_VECTOR_REGISTERS 1
+
+// the size of the vector register to use (in bits)
+#define __MATRIX_VECTOR_SIZE 128
 
 // ---------------------------------------------------
 
@@ -73,6 +82,35 @@ Matrix<T> &conj(Matrix<T> &matrix)
 
 // ---------------------------------------------------
 
+// holds the info used for vector register usage (and non-vector register usage)
+template<typename T> struct vector_register_info
+{
+	static constexpr std::size_t alignment = alignof(T);
+	typedef T register_type;
+};
+
+// specializations for various types
+#if __MATRIX_USE_VECTOR_REGISTERS
+template<> struct vector_register_info<double>
+{
+	static constexpr std::size_t alignment = __MATRIX_VECTOR_SIZE / 8;
+
+	#if __MATRIX_VECTOR_SIZE == 128
+	typedef __m128d register_type;
+	#elif __MATRIX_VECTOR_SIZE == 256
+	typedef __m256d register_type;
+	#elif __MATRIX_VECTOR_SIZE == 512
+	typedef __m512d register_type;
+	#endif
+};
+#endif
+
+// ---------------------------------------------------
+
+// ---------------------------------------------------
+
+// ---------------------------------------------------
+
 // represents a mathematical matrix
 // T is assumed to be a POD value-type
 // T is required to be explicitly constructable from int
@@ -85,7 +123,7 @@ private: // -- data -- //
 
 	T *data;          // the elements in the array
 	std::size_t cap;  // capacity of array
-	std::size_t r, c; // number of rows / cols
+	std::size_t r, c; // number of rows / cols. if one is zero the other must also be zero
 
 private: // -- helpers -- //
 
@@ -186,6 +224,55 @@ private: // -- helpers -- //
 		return r;
 	}
 
+	// returns a pointer to <count> T elements, suitably aligned for vector instructions. deallocate with dealloc().
+	// allocating 0 elements returns nullptr.
+	static T *alloc(std::size_t count)
+	{
+		// degenerate case: allocating 0 returns nullptr
+		if (count == 0) return nullptr;
+
+		// get the alignment value
+		std::size_t align = vector_register_info<T>::alignment;
+		// ensure we can place a pointer
+		if (align < alignof(void*)) align = alignof(void*);
+
+		// compute required space - contains <count> T values
+		std::size_t space = sizeof(T) * count;
+		// ensure this is a multiple of align (this way vector load instructions won't access out-of-bounds data on the last pass)
+		if (space % align != 0) space += align - space % align;
+		// add extra space to hold a pointer and enough padding to ensure proper alignment
+		space += sizeof(void*) + align - 1;
+
+		// allocate the space
+		void *const raw = ::operator new(space);
+
+		// offset the raw pointer to make room for the raw pointer value
+		void *off = (char*)raw + sizeof(void*);
+
+		// compute <off> position in alignment block (intptr_t used to ensure we don't get truncation errors)
+		std::size_t align_pos = (intptr_t)off % align;
+		// if it's not on a boundary, offset it to the next boundary
+		if (align_pos != 0) off = (char*)off + (align - align_pos);
+
+		// store the raw pointer just before the resulting aligned pointer
+		((void**)off)[-1] = raw;
+
+		std::cout << "raw: " << raw << " aligned: " << off << '\n';
+
+		// return the offset pointer
+		return reinterpret_cast<T*>(off);
+	}
+	// deallocated memory from alloc(). calling with nullptr is safe.
+	void dealloc(T *ptr)
+	{
+		// current indexing method breaks on null, so ensure that doesn't happen
+		if (ptr)
+		{
+			// delete the raw pointer stored internally from alloc()
+			::operator delete(reinterpret_cast<void**>(ptr)[-1]);
+		}
+	}
+
 public: // -- ctor / dtor / asgn -- //
 
 	// creates an empty matrix
@@ -209,7 +296,7 @@ public: // -- ctor / dtor / asgn -- //
 		else
 		{
 			cap = rows * cols;
-			data = new T[cap];
+			data = alloc(cap);
 			r = rows;
 			c = cols;
 		}
@@ -219,17 +306,18 @@ public: // -- ctor / dtor / asgn -- //
 		#endif
 	}
 
+	// destroys the matrix. the object is left in an undefined state.
 	~Matrix()
 	{
 		// free the array
-		delete[] data;
+		dealloc(data);
 	}
 
 	Matrix(const Matrix &other) : r(other.r), c(other.c)
 	{
 		// allocate and copy the bare minimum
 		cap = r * c;
-		data = cap != 0 ? new T[cap] : nullptr;
+		data = alloc(cap);
 		for (std::size_t i = 0; i < cap; ++i) data[i] = other.data[i];
 
 		#if __MATRIX_DIAGNOSTICS
@@ -314,8 +402,8 @@ public: // -- utilities -- //
 		if (r * c > cap)
 		{
 			cap = r * c;
-			delete[] data; // delete on null is defined to be safe
-			data = new T[cap];
+			dealloc(data);
+			data = alloc(cap);
 		}
 	}
 	// resizes the matrix to the specified dimensions, preserving the contents after the call
@@ -334,7 +422,7 @@ public: // -- utilities -- //
 			if (rows * cols > cap) cap = rows * cols;
 
 			// we need to reallocate - use cap to be invisible (algorithms may be optimized for a specific capacity)
-			T *newdata = new T[cap];
+			T *newdata = alloc(cap);
 
 			// get min size for each dimension (only this portion will be preserved)
 			std::size_t min_r = rows < r ? rows : r;
@@ -346,7 +434,7 @@ public: // -- utilities -- //
 					newdata[row * cols + col] = data[row * c + col];
 
 			// replace old array
-			delete[] data;
+			dealloc(data);
 			data = newdata;
 		}
 
@@ -364,11 +452,11 @@ public: // -- utilities -- //
 		{
 			// generate the new array
 			cap = count;
-			T *newdata = new T[cap];
+			T *newdata = alloc(cap);
 			for (std::size_t i = 0; i < r * c; ++i) newdata[i] = data[i];
 
 			// replace old array
-			delete[] data;
+			dealloc(data);
 			data = newdata;
 		}
 	}
@@ -381,11 +469,11 @@ public: // -- utilities -- //
 		{
 			// generate the new array
 			cap = r * c;
-			T *newdata = cap > 0 ? new T[cap] : nullptr;
+			T *newdata = alloc(cap);
 			for (std::size_t i = 0; i < cap; ++i) newdata[i] = data[i];
 
 			// replace old array
-			delete[] data;
+			dealloc(data);
 			data = newdata;
 		}
 	}
