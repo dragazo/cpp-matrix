@@ -1,13 +1,51 @@
 #include <iostream>
 #include <iomanip>
+#include <chrono>
 #include "Matricies.h"
 
 #define forall(m) for(std::size_t row = 0; row < m.rows(); ++row) for(std::size_t col = 0; col < m.cols(); ++col)
 
+#define __BENCHMARK 0
+
 int main()
 {
+	using namespace std::chrono;
+	typedef high_resolution_clock hrc;
+
 	try
 	{
+		#if __BENCHMARK
+		Matrix<float> a(10, 10), b(10, 10);
+
+		forall(a)
+		{
+			a(row, col) = row + col + row * col;
+			b(row, col) = row * row + col * col;
+		}
+
+		const int reps = 20;
+		
+		auto start = hrc::now();
+
+		for (int i = 0; i < reps; ++i)
+		{
+			a *= 1.1f;
+		}
+
+		auto t = duration_cast<milliseconds>(hrc::now() - start).count();
+
+		//std::cout << a << "\n\n\n";
+
+		std::cout << "dim:  " << a.rows() << " x " << a.cols() << '\n';
+		std::cout << "reps: " << reps << '\n';
+		std::cout << "elapsed: " << t << "ms\n";
+		std::cout << "average: " << std::setprecision(3) << ((double)t / reps) << "ms\n";
+
+		std::cout << "\n\n\n" << a << '\n';
+		std::cin.get();
+
+		#else
+
 		Matrix<double> m, temp;
 		std::size_t rows, cols;
 		double det;
@@ -34,21 +72,9 @@ int main()
 			std::cout << "conj:\n" << temp.conj() << '\n';
 
 			std::cout << "\n\n";
-
-			/*
-			m.resize(3, 3);
-			forall(m) m(row, col) = (row + col + 1) + row * col;
-
-			std::cout << m << '\n';
-
-			m.resize(4, 4); std::cout << m << '\n';
-			m.resize(5, 5); std::cout << m << '\n';
-			m.resize(2, 2); std::cout << m << '\n';
-			m.resize(6, 6); std::cout << m << '\n';
-
-			std::cin.get();
-			*/
 		}
+		
+		#endif
 	}
 	catch (const std::exception &ex)
 	{

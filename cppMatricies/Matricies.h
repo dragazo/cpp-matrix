@@ -10,7 +10,10 @@
 #include <complex>
 #include <cmath>
 #include <memory>
+
 #include <emmintrin.h>
+#include <immintrin.h>
+//#include <xmmintrin.h>
 
 // if true, logs ctor/dtor/asgn/etc.
 #define __MATRIX_DIAGNOSTICS 0
@@ -19,7 +22,7 @@
 #define __MATRIX_USE_VECTOR_REGISTERS 1
 
 // the size of the vector register to use (in bits)
-#define __MATRIX_VECTOR_SIZE 128
+#define __MATRIX_VECTOR_SIZE 256
 
 // ---------------------------------------------------
 
@@ -85,23 +88,21 @@ Matrix<T> &conj(Matrix<T> &matrix)
 // holds the info used for vector register usage (and non-vector register usage)
 template<typename T> struct vector_register_info
 {
+	static constexpr bool vectorizable = false;
 	static constexpr std::size_t alignment = alignof(T);
-	typedef T register_type;
 };
 
-// specializations for various types
+// specializations for various types (only if using vector registers, cause otherwise just wasting memory to align things)
 #if __MATRIX_USE_VECTOR_REGISTERS
 template<> struct vector_register_info<double>
 {
+	static constexpr bool vectorizable = true;
 	static constexpr std::size_t alignment = __MATRIX_VECTOR_SIZE / 8;
-
-	#if __MATRIX_VECTOR_SIZE == 128
-	typedef __m128d register_type;
-	#elif __MATRIX_VECTOR_SIZE == 256
-	typedef __m256d register_type;
-	#elif __MATRIX_VECTOR_SIZE == 512
-	typedef __m512d register_type;
-	#endif
+};
+template<> struct vector_register_info<float>
+{
+	static constexpr bool vectorizable = true;
+	static constexpr std::size_t alignment = __MATRIX_VECTOR_SIZE / 8;
 };
 #endif
 
@@ -112,10 +113,11 @@ template<> struct vector_register_info<double>
 // ---------------------------------------------------
 
 // represents a mathematical matrix
-// T is assumed to be a POD value-type
-// T is required to be explicitly constructable from int
-// T is required to have binary operators +, -, *, / (and their compound assignments), ==, and != defined, capable of accepting T as both arguments 
-// T is required to have unary operator - defined, capable of accepting T as its argument
+// T is assumed to be a POD value-type.
+// T is assumed to behave like a real number (i.e. commutative, associative, distributive, etc).
+// T is required to be explicitly constructable from int as per (T)0.
+// T is required to have binary operators +, -, *, / (and their compound assignments), ==, and != defined, capable of accepting T as both arguments.
+// T is required to have unary operator - defined, capable of accepting T as its argument.
 template<typename T>
 class Matrix
 {
@@ -256,8 +258,6 @@ private: // -- helpers -- //
 
 		// store the raw pointer just before the resulting aligned pointer
 		((void**)off)[-1] = raw;
-
-		std::cout << "raw: " << raw << " aligned: " << off << '\n';
 
 		// return the offset pointer
 		return reinterpret_cast<T*>(off);
@@ -480,7 +480,7 @@ public: // -- utilities -- //
 
 	// returns the item at the specified index
 	T &operator[](std::size_t index) { return data[index]; }
-	T operator[](std::size_t index) const { return data[index]; }
+	const T &operator[](std::size_t index) const { return data[index]; }
 
 	// gets the element at the specified index, but with bounds checking
 	// throws std::out_of_range if element is out of bounds
@@ -489,7 +489,7 @@ public: // -- utilities -- //
 		if (index >= r * c) throw std::out_of_range("Specified matrix element out of bounds");
 		return data[index];
 	}
-	T ati(std::size_t index) const
+	const T &ati(std::size_t index) const
 	{
 		if (index >= r * c) throw std::out_of_range("Specified matrix element out of bounds");
 		return data[index];
@@ -511,7 +511,7 @@ public: // -- utilities -- //
 
 	// gets the element at the specified row and col
 	T &operator()(std::size_t row, std::size_t col) { return data[row * c + col]; }
-	T operator()(std::size_t row, std::size_t col) const { return data[row * c + col]; }
+	const T &operator()(std::size_t row, std::size_t col) const { return data[row * c + col]; }
 
 	// gets the element at the specified row and col, but with bounds checking
 	// throws std::out_of_range if element is out of bounds
@@ -520,7 +520,7 @@ public: // -- utilities -- //
 		if (row >= r || col >= c) throw std::out_of_range("Specified matrix element out of bounds");
 		return data[row * c + col];
 	}
-	T at(std::size_t row, std::size_t col) const
+	const T &at(std::size_t row, std::size_t col) const
 	{
 		if (row >= r || col >= c) throw std::out_of_range("Specified matrix element out of bounds");
 		return data[row * c + col];
@@ -938,7 +938,8 @@ template<typename T> std::istream &operator>>(std::istream &istr, Matrix<T> &m)
 
 // adds matrix b to matrix a
 // throws MatrixSizeError if matricies are of different sizes
-template<typename T> Matrix<T> &operator+=(Matrix<T> &a, const Matrix<T> &b)
+template<typename T>
+Matrix<T> &operator+=(Matrix<T> &a, const Matrix<T> &b)
 {
 	// ensure sizes are ok
 	if (a.rows() != b.rows() || a.cols() != b.cols()) throw MatrixSizeError("Matrix addition requires the matricies be of same size");
@@ -949,10 +950,81 @@ template<typename T> Matrix<T> &operator+=(Matrix<T> &a, const Matrix<T> &b)
 
 	return a;
 }
+#if __MATRIX_USE_VECTOR_REGISTERS
+template<>
+Matrix<double> &operator+=(Matrix<double> &a, const Matrix<double> &b)
+{
+	// ensure sizes are ok
+	if (a.rows() != b.rows() || a.cols() != b.cols()) throw MatrixSizeError("Matrix addition requires the matricies be of same size");
+
+	#if __MATRIX_VECTOR_SIZE == 128
+	__m128d reg_a, reg_b;
+	for (std::size_t i = 0; i < a.size(); i += 2)
+	{
+		reg_a = _mm_load_pd(&a[i]);
+		reg_b = _mm_load_pd(&b[i]);
+
+		reg_a = _mm_add_pd(reg_a, reg_b);
+
+		_mm_store_pd(&a[i], reg_a);
+	}
+	#elif __MATRIX_VECTOR_SIZE == 256
+	__m256d reg_a, reg_b;
+	for (std::size_t i = 0; i < a.size(); i += 4)
+	{
+		reg_a = _mm256_load_pd(&a[i]);
+		reg_b = _mm256_load_pd(&b[i]);
+
+		reg_a = _mm256_add_pd(reg_a, reg_b);
+
+		_mm256_store_pd(&a[i], reg_a);
+	}
+	#else
+	throw std::exception("unknown __MATRIX_VECTOR_SIZE specified in header");
+	#endif
+
+	return a;
+}
+template<>
+Matrix<float> &operator+=(Matrix<float> &a, const Matrix<float> &b)
+{
+	// ensure sizes are ok
+	if (a.rows() != b.rows() || a.cols() != b.cols()) throw MatrixSizeError("Matrix addition requires the matricies be of same size");
+
+	#if __MATRIX_VECTOR_SIZE == 128
+	__m128 reg_a, reg_b;
+	for (std::size_t i = 0; i < a.size(); i += 4)
+	{
+		reg_a = _mm_load_ps(&a[i]);
+		reg_b = _mm_load_ps(&b[i]);
+
+		reg_a = _mm_add_ps(reg_a, reg_b);
+
+		_mm_store_ps(&a[i], reg_a);
+	}
+	#elif __MATRIX_VECTOR_SIZE == 256
+	__m256 reg_a, reg_b;
+	for (std::size_t i = 0; i < a.size(); i += 8)
+	{
+		reg_a = _mm256_load_ps(&a[i]);
+		reg_b = _mm256_load_ps(&b[i]);
+
+		reg_a = _mm256_add_ps(reg_a, reg_b);
+
+		_mm256_store_ps(&a[i], reg_a);
+	}
+	#else
+	throw std::exception("unknown __MATRIX_VECTOR_SIZE specified in header");
+	#endif
+
+	return a;
+}
+#endif
+
 template<typename T> Matrix<T> operator+(const Matrix<T> &a, const Matrix<T> &b) { Matrix<T> res = a; res += b; return res; }
 template<typename T> Matrix<T> &&operator+(Matrix<T> &&a, const Matrix<T> &b) { a += b; return std::move(a); }
 template<typename T> Matrix<T> &&operator+(const Matrix<T> &a, Matrix<T> &&b) { b += a; return std::move(b); }
-template<typename T> Matrix<T> &&operator+(Matrix<T> &&a, Matrix<T> &&b) { a += b; return std::move(a); }
+template<typename T> Matrix<T> &&operator+(Matrix<T> &&a, Matrix<T> &&b) { a += b; return std::move(a); } // this overload is to remove ambiguity from the above 2
 
 // subtracts matrix b from matrix a
 // throws MatrixSizeError if matricies are of different sizes
@@ -967,12 +1039,81 @@ template<typename T> Matrix<T> &operator-=(Matrix<T> &a, const Matrix<T> &b)
 
 	return a;
 }
+#if __MATRIX_USE_VECTOR_REGISTERS
+template<>
+Matrix<double> &operator-=(Matrix<double> &a, const Matrix<double> &b)
+{
+	// ensure sizes are ok
+	if (a.rows() != b.rows() || a.cols() != b.cols()) throw MatrixSizeError("Matrix addition requires the matricies be of same size");
+
+	#if __MATRIX_VECTOR_SIZE == 128
+	__m128d reg_a, reg_b;
+	for (std::size_t i = 0; i < a.size(); i += 2)
+	{
+		reg_a = _mm_load_pd(&a[i]);
+		reg_b = _mm_load_pd(&b[i]);
+
+		reg_a = _mm_sub_pd(reg_a, reg_b);
+
+		_mm_store_pd(&a[i], reg_a);
+	}
+	#elif __MATRIX_VECTOR_SIZE == 256
+	__m256d reg_a, reg_b;
+	for (std::size_t i = 0; i < a.size(); i += 4)
+	{
+		reg_a = _mm256_load_pd(&a[i]);
+		reg_b = _mm256_load_pd(&b[i]);
+
+		reg_a = _mm256_sub_pd(reg_a, reg_b);
+
+		_mm256_store_pd(&a[i], reg_a);
+	}
+	#else
+	throw std::exception("unknown __MATRIX_VECTOR_SIZE specified in header");
+	#endif
+
+	return a;
+}
+template<>
+Matrix<float> &operator-=(Matrix<float> &a, const Matrix<float> &b)
+{
+	// ensure sizes are ok
+	if (a.rows() != b.rows() || a.cols() != b.cols()) throw MatrixSizeError("Matrix addition requires the matricies be of same size");
+
+	#if __MATRIX_VECTOR_SIZE == 128
+	__m128 reg_a, reg_b;
+	for (std::size_t i = 0; i < a.size(); i += 4)
+	{
+		reg_a = _mm_load_ps(&a[i]);
+		reg_b = _mm_load_ps(&b[i]);
+
+		reg_a = _mm_sub_ps(reg_a, reg_b);
+
+		_mm_store_ps(&a[i], reg_a);
+	}
+	#elif __MATRIX_VECTOR_SIZE == 256
+	__m256 reg_a, reg_b;
+	for (std::size_t i = 0; i < a.size(); i += 8)
+	{
+		reg_a = _mm256_load_ps(&a[i]);
+		reg_b = _mm256_load_ps(&b[i]);
+
+		reg_a = _mm256_sub_ps(reg_a, reg_b);
+
+		_mm256_store_ps(&a[i], reg_a);
+	}
+	#else
+	throw std::exception("unknown __MATRIX_VECTOR_SIZE specified in header");
+	#endif
+
+	return a;
+}
+#endif
+
 template<typename T> Matrix<T> operator-(const Matrix<T> &a, const Matrix<T> &b) { Matrix<T> res = a; res -= b; return res; }
 template<typename T> Matrix<T> &&operator-(Matrix<T> &&a, const Matrix<T> &b) { a -= b; return std::move(a); }
-template<typename T> Matrix<T> &&operator-(const Matrix<T> &a, Matrix<T> &&b) { b -= a; return std::move(b); }
-template<typename T> Matrix<T> &&operator-(Matrix<T> &&a, Matrix<T> &&b) { a -= b; return std::move(a); }
 
-// multiplies the matrix by a scalar
+// multiplies each element in the matrix by a scalar
 template<typename T> Matrix<T> &operator*=(Matrix<T> &m, T f)
 {
 	for (std::size_t row = 0; row < m.rows(); ++row)
@@ -981,10 +1122,136 @@ template<typename T> Matrix<T> &operator*=(Matrix<T> &m, T f)
 
 	return m;
 }
+#if __MATRIX_USE_VECTOR_REGISTERS
+template<>
+Matrix<double> &operator*=(Matrix<double> &m, double f)
+{
+	#if __MATRIX_VECTOR_SIZE == 128
+	__m128d reg_a, reg_b;
+	reg_b = _mm_set1_pd(f);
+	for (std::size_t i = 0; i < m.size(); i += 2)
+	{
+		reg_a = _mm_load_pd(&m[i]);
+		reg_a = _mm_mul_pd(reg_a, reg_b);
+		_mm_store_pd(&m[i], reg_a);
+	}
+	#elif __MATRIX_VECTOR_SIZE == 256
+	__m256d reg_a, reg_b;
+	reg_b = _mm256_set1_pd(f);
+	for (std::size_t i = 0; i < m.size(); i += 4)
+	{
+		reg_a = _mm256_load_pd(&m[i]);
+		reg_a = _mm256_mul_pd(reg_a, reg_b);
+		_mm256_store_pd(&m[i], reg_a);
+	}
+	#else
+	throw std::exception("unknown __MATRIX_VECTOR_SIZE specified in header");
+	#endif
+
+	return m;
+}
+template<>
+Matrix<float> &operator*=(Matrix<float> &m, float f)
+{
+	#if __MATRIX_VECTOR_SIZE == 128
+	__m128 reg_a, reg_b;
+	reg_b = _mm_set1_ps(f);
+	for (std::size_t i = 0; i < m.size(); i += 4)
+	{
+		reg_a = _mm_load_ps(&m[i]);
+		reg_a = _mm_mul_ps(reg_a, reg_b);
+		_mm_store_ps(&m[i], reg_a);
+	}
+	#elif __MATRIX_VECTOR_SIZE == 256
+	__m256 reg_a, reg_b;
+	reg_b = _mm256_set1_ps(f);
+	for (std::size_t i = 0; i < m.size(); i += 8)
+	{
+		reg_a = _mm256_load_ps(&m[i]);
+		reg_a = _mm256_mul_ps(reg_a, reg_b);
+		_mm256_store_ps(&m[i], reg_a);
+	}
+	#else
+	throw std::exception("unknown __MATRIX_VECTOR_SIZE specified in header");
+	#endif
+
+	return m;
+}
+#endif
+
 template<typename T> Matrix<T> operator*(const Matrix<T> &m, T f) { Matrix<T> res = m; res *= f; return res; }
 template<typename T> Matrix<T> operator*(T f, const Matrix<T> &m) { Matrix<T> res = m; res *= f; return res; }
 template<typename T> Matrix<T> &&operator*(Matrix<T> &&m, T f) { m *= f; return std::move(m); }
 template<typename T> Matrix<T> &&operator*(T f, Matrix<T> &&m) { m *= f; return std::move(m); }
+
+// divides each element in the matrix be a scalar
+template<typename T> Matrix<T> &operator/=(Matrix<T> &m, T f)
+{
+	for (std::size_t row = 0; row < m.rows(); ++row)
+		for (std::size_t col = 0; col < m.cols(); ++col)
+			m(row, col) /= f;
+
+	return m;
+}
+#if __MATRIX_USE_VECTOR_REGISTERS
+template<>
+Matrix<double> &operator/=(Matrix<double> &m, double f)
+{
+	#if __MATRIX_VECTOR_SIZE == 128
+	__m128d reg_a, reg_b;
+	reg_b = _mm_set1_pd(f);
+	for (std::size_t i = 0; i < m.size(); i += 2)
+	{
+		reg_a = _mm_load_pd(&m[i]);
+		reg_a = _mm_div_pd(reg_a, reg_b);
+		_mm_store_pd(&m[i], reg_a);
+	}
+	#elif __MATRIX_VECTOR_SIZE == 256
+	__m256d reg_a, reg_b;
+	reg_b = _mm256_set1_pd(f);
+	for (std::size_t i = 0; i < m.size(); i += 4)
+	{
+		reg_a = _mm256_load_pd(&m[i]);
+		reg_a = _mm256_div_pd(reg_a, reg_b);
+		_mm256_store_pd(&m[i], reg_a);
+	}
+	#else
+	throw std::exception("unknown __MATRIX_VECTOR_SIZE specified in header");
+	#endif
+
+	return m;
+}
+template<>
+Matrix<float> &operator/=(Matrix<float> &m, float f)
+{
+	#if __MATRIX_VECTOR_SIZE == 128
+	__m128 reg_a, reg_b;
+	reg_b = _mm_set1_ps(f);
+	for (std::size_t i = 0; i < m.size(); i += 4)
+	{
+		reg_a = _mm_load_ps(&m[i]);
+		reg_a = _mm_div_ps(reg_a, reg_b);
+		_mm_store_ps(&m[i], reg_a);
+	}
+	#elif __MATRIX_VECTOR_SIZE == 256
+	__m256 reg_a, reg_b;
+	reg_b = _mm256_set1_ps(f);
+	for (std::size_t i = 0; i < m.size(); i += 8)
+	{
+		reg_a = _mm256_load_ps(&m[i]);
+		reg_a = _mm256_div_ps(reg_a, reg_b);
+		_mm256_store_ps(&m[i], reg_a);
+	}
+	#else
+	throw std::exception("unknown __MATRIX_VECTOR_SIZE specified in header");
+	#endif
+
+	return m;
+}
+#endif
+
+template<typename T> Matrix<T> operator/(const Matrix<T> &m, T f) { Matrix<T> res = m; res /= f; return res; }
+template<typename T> Matrix<T> &&operator/(Matrix<T> &&m, T f) { m /= f; return std::move(res); }
 
 // multiplies matrix lhs by matrix rhs
 // throws MatrixSizeError if matricies are incompatible
