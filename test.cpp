@@ -17,7 +17,7 @@
 
 // -------------------------------------------------------------------------------------------------------------------------------------------
 
-static_assert(std::is_same_v<std::iterator_traits<val_iter<std::size_t>>::iterator_category, std::random_access_iterator_tag>, "val iterator is not random access");
+static_assert(std::is_same_v<std::iterator_traits<matrix_impl::val_iter<std::size_t>>::iterator_category, std::random_access_iterator_tag>, "val iterator is not random access");
 static_assert(std::is_same_v<std::iterator_traits<matrix<double>::iterator>::iterator_category, std::random_access_iterator_tag>, "matrix iterator is not random access");
 
 static_assert(std::is_same_v<std::iterator_traits<matrix<double>::row_view::iterator>::iterator_category, std::random_access_iterator_tag>, "row view iterator is not random access");
@@ -1245,76 +1245,76 @@ void mul_tests()
 
 void unseq_tests()
 {
-	static_assert(is_unseq<short>::value, "primitive unseq error");
-	static_assert(is_unseq<int>::value, "primitive unseq error");
-	static_assert(is_unseq<long>::value, "primitive unseq error");
-	static_assert(is_unseq<long long>::value, "primitive unseq error");
+	static_assert(matrix_impl::is_unseq<short>::value, "primitive unseq error");
+	static_assert(matrix_impl::is_unseq<int>::value, "primitive unseq error");
+	static_assert(matrix_impl::is_unseq<long>::value, "primitive unseq error");
+	static_assert(matrix_impl::is_unseq<long long>::value, "primitive unseq error");
 
-	static_assert(is_unseq<unsigned short>::value, "primitive unseq error");
-	static_assert(is_unseq<unsigned int>::value, "primitive unseq error");
-	static_assert(is_unseq<unsigned long>::value, "primitive unseq error");
-	static_assert(is_unseq<unsigned long long>::value, "primitive unseq error");
+	static_assert(matrix_impl::is_unseq<unsigned short>::value, "primitive unseq error");
+	static_assert(matrix_impl::is_unseq<unsigned int>::value, "primitive unseq error");
+	static_assert(matrix_impl::is_unseq<unsigned long>::value, "primitive unseq error");
+	static_assert(matrix_impl::is_unseq<unsigned long long>::value, "primitive unseq error");
 
-	static_assert(is_unseq<float>::value, "primitive unseq error");
-	static_assert(is_unseq<double>::value, "primitive unseq error");
-	static_assert(is_unseq<long double>::value, "primitive unseq error");
+	static_assert(matrix_impl::is_unseq<float>::value, "primitive unseq error");
+	static_assert(matrix_impl::is_unseq<double>::value, "primitive unseq error");
+	static_assert(matrix_impl::is_unseq<long double>::value, "primitive unseq error");
 
-	static_assert(is_unseq<matrix<int>::row_view>::value, "expr unseq error");
-	static_assert(is_unseq<const matrix<int>::row_view>::value, "expr unseq error");
-	static_assert(is_unseq<matrix<int>::row_view&>::value, "expr unseq error");
-	static_assert(is_unseq<const matrix<int>::row_view&>::value, "expr unseq error");
-	static_assert(is_unseq<matrix<int>::row_view&&>::value, "expr unseq error");
-	static_assert(is_unseq<const matrix<int>::row_view&&>::value, "expr unseq error");
+	static_assert(matrix_impl::is_unseq<matrix<int>::row_view>::value, "expr unseq error");
+	static_assert(matrix_impl::is_unseq<const matrix<int>::row_view>::value, "expr unseq error");
+	static_assert(matrix_impl::is_unseq<matrix<int>::row_view&>::value, "expr unseq error");
+	static_assert(matrix_impl::is_unseq<const matrix<int>::row_view&>::value, "expr unseq error");
+	static_assert(matrix_impl::is_unseq<matrix<int>::row_view&&>::value, "expr unseq error");
+	static_assert(matrix_impl::is_unseq<const matrix<int>::row_view&&>::value, "expr unseq error");
 
-	static_assert(!is_unseq<intrinsic<int>>::value, "expr unseq error");
-	static_assert(!is_unseq<const intrinsic<int>>::value, "expr unseq error");
-	static_assert(!is_unseq<intrinsic<int>&>::value, "expr unseq error");
-	static_assert(!is_unseq<const intrinsic<int>&>::value, "expr unseq error");
-	static_assert(!is_unseq<intrinsic<int>&&>::value, "expr unseq error");
-	static_assert(!is_unseq<const intrinsic<int>&&>::value, "expr unseq error");
+	static_assert(!matrix_impl::is_unseq<intrinsic<int>>::value, "expr unseq error");
+	static_assert(!matrix_impl::is_unseq<const intrinsic<int>>::value, "expr unseq error");
+	static_assert(!matrix_impl::is_unseq<intrinsic<int>&>::value, "expr unseq error");
+	static_assert(!matrix_impl::is_unseq<const intrinsic<int>&>::value, "expr unseq error");
+	static_assert(!matrix_impl::is_unseq<intrinsic<int>&&>::value, "expr unseq error");
+	static_assert(!matrix_impl::is_unseq<const intrinsic<int>&&>::value, "expr unseq error");
 
 	{
 		matrix<int> m;
-		static_assert(is_unseq<decltype(m[0])>::value, "expr unseq error");
-		static_assert(is_unseq<decltype(+m[0])>::value, "expr unseq error");
-		static_assert(is_unseq<decltype(-m[0])>::value, "expr unseq error");
-		static_assert(is_unseq<decltype(m[0] + m[0])>::value, "expr unseq error");
-		static_assert(is_unseq<decltype(m[0] - m[0])>::value, "expr unseq error");
-		static_assert(is_unseq<decltype(m[0] - -m[0])>::value, "expr unseq error");
-		static_assert(is_unseq<decltype(m[0] - -+m[0])>::value, "expr unseq error");
-		static_assert(is_unseq<decltype(+-m[0] - -+m[0])>::value, "expr unseq error");
-		static_assert(is_unseq<decltype(+-m[0] * 3 - -+m[0])>::value, "expr unseq error");
-		static_assert(is_unseq<decltype(3 * +-m[0] - -+m[0])>::value, "expr unseq error");
+		static_assert(matrix_impl::is_unseq<decltype(m[0])>::value, "expr unseq error");
+		static_assert(matrix_impl::is_unseq<decltype(+m[0])>::value, "expr unseq error");
+		static_assert(matrix_impl::is_unseq<decltype(-m[0])>::value, "expr unseq error");
+		static_assert(matrix_impl::is_unseq<decltype(m[0] + m[0])>::value, "expr unseq error");
+		static_assert(matrix_impl::is_unseq<decltype(m[0] - m[0])>::value, "expr unseq error");
+		static_assert(matrix_impl::is_unseq<decltype(m[0] - -m[0])>::value, "expr unseq error");
+		static_assert(matrix_impl::is_unseq<decltype(m[0] - -+m[0])>::value, "expr unseq error");
+		static_assert(matrix_impl::is_unseq<decltype(+-m[0] - -+m[0])>::value, "expr unseq error");
+		static_assert(matrix_impl::is_unseq<decltype(+-m[0] * 3 - -+m[0])>::value, "expr unseq error");
+		static_assert(matrix_impl::is_unseq<decltype(3 * +-m[0] - -+m[0])>::value, "expr unseq error");
 	}
 	{
 		matrix<double> m;
-		static_assert(is_unseq<decltype(m[0])>::value, "expr unseq error");
-		static_assert(is_unseq<decltype(+m[0])>::value, "expr unseq error");
-		static_assert(is_unseq<decltype(-m[0])>::value, "expr unseq error");
-		static_assert(is_unseq<decltype(m[0] + m[0])>::value, "expr unseq error");
-		static_assert(is_unseq<decltype(m[0] - m[0])>::value, "expr unseq error");
-		static_assert(is_unseq<decltype(m[0] - -m[0])>::value, "expr unseq error");
-		static_assert(is_unseq<decltype(m[0] - -+m[0])>::value, "expr unseq error");
-		static_assert(is_unseq<decltype(+-m[0] - -+m[0])>::value, "expr unseq error");
-		static_assert(is_unseq<decltype(+-m[0] * 3 - -+m[0])>::value, "expr unseq error");
-		static_assert(is_unseq<decltype(3 * +-m[0] - -+m[0])>::value, "expr unseq error");
+		static_assert(matrix_impl::is_unseq<decltype(m[0])>::value, "expr unseq error");
+		static_assert(matrix_impl::is_unseq<decltype(+m[0])>::value, "expr unseq error");
+		static_assert(matrix_impl::is_unseq<decltype(-m[0])>::value, "expr unseq error");
+		static_assert(matrix_impl::is_unseq<decltype(m[0] + m[0])>::value, "expr unseq error");
+		static_assert(matrix_impl::is_unseq<decltype(m[0] - m[0])>::value, "expr unseq error");
+		static_assert(matrix_impl::is_unseq<decltype(m[0] - -m[0])>::value, "expr unseq error");
+		static_assert(matrix_impl::is_unseq<decltype(m[0] - -+m[0])>::value, "expr unseq error");
+		static_assert(matrix_impl::is_unseq<decltype(+-m[0] - -+m[0])>::value, "expr unseq error");
+		static_assert(matrix_impl::is_unseq<decltype(+-m[0] * 3 - -+m[0])>::value, "expr unseq error");
+		static_assert(matrix_impl::is_unseq<decltype(3 * +-m[0] - -+m[0])>::value, "expr unseq error");
 	}
 	{
 		matrix<intrinsic<int>> m;
-		static_assert(!is_unseq<decltype(m[0])>::value, "expr unseq error");
-		static_assert(!is_unseq<decltype(+m[0])>::value, "expr unseq error");
-		static_assert(!is_unseq<decltype(-m[0])>::value, "expr unseq error");
-		static_assert(!is_unseq<decltype(m[0] * 3)>::value, "expr unseq error");
-		static_assert(!is_unseq<decltype(3 * m[0])>::value, "expr unseq error");
-		static_assert(!is_unseq<decltype(m[0] + m[0])>::value, "expr unseq error");
-		static_assert(!is_unseq<decltype(m[0] - m[0])>::value, "expr unseq error");
-		static_assert(!is_unseq<decltype(m[0] - -m[0])>::value, "expr unseq error");
-		static_assert(!is_unseq<decltype(m[0] - -+m[0])>::value, "expr unseq error");
-		static_assert(!is_unseq<decltype(+-m[0] - -+m[0])>::value, "expr unseq error");
-		static_assert(!is_unseq<decltype(+-m[0] * 3 - -+m[0])>::value, "expr unseq error");
-		static_assert(!is_unseq<decltype(3 * +-m[0] - -+m[0])>::value, "expr unseq error");
-		static_assert(!is_unseq<decltype(3 * -m[0])>::value, "expr unseq error");
-		static_assert(!is_unseq<decltype(intrinsic<int>{3} * -m[0]) > ::value, "expr unseq error");
+		static_assert(!matrix_impl::is_unseq<decltype(m[0])>::value, "expr unseq error");
+		static_assert(!matrix_impl::is_unseq<decltype(+m[0])>::value, "expr unseq error");
+		static_assert(!matrix_impl::is_unseq<decltype(-m[0])>::value, "expr unseq error");
+		static_assert(!matrix_impl::is_unseq<decltype(m[0] * 3)>::value, "expr unseq error");
+		static_assert(!matrix_impl::is_unseq<decltype(3 * m[0])>::value, "expr unseq error");
+		static_assert(!matrix_impl::is_unseq<decltype(m[0] + m[0])>::value, "expr unseq error");
+		static_assert(!matrix_impl::is_unseq<decltype(m[0] - m[0])>::value, "expr unseq error");
+		static_assert(!matrix_impl::is_unseq<decltype(m[0] - -m[0])>::value, "expr unseq error");
+		static_assert(!matrix_impl::is_unseq<decltype(m[0] - -+m[0])>::value, "expr unseq error");
+		static_assert(!matrix_impl::is_unseq<decltype(+-m[0] - -+m[0])>::value, "expr unseq error");
+		static_assert(!matrix_impl::is_unseq<decltype(+-m[0] * 3 - -+m[0])>::value, "expr unseq error");
+		static_assert(!matrix_impl::is_unseq<decltype(3 * +-m[0] - -+m[0])>::value, "expr unseq error");
+		static_assert(!matrix_impl::is_unseq<decltype(3 * -m[0])>::value, "expr unseq error");
+		static_assert(!matrix_impl::is_unseq<decltype(intrinsic<int>{3} * -m[0]) > ::value, "expr unseq error");
 	}
 	{
 		typedef intrinsic<int> t;
@@ -1326,10 +1326,10 @@ void unseq_tests()
 		m1[0] = m1[0] + m2[1];
 		assert((m1 == matrix<int>{ { 8, 6 }, { 4, 1 }, { 6, 7 } }));
 
-		static_assert(is_unseq<decltype(m1[0])>::value, "expr unseq error");
-		static_assert(!is_unseq<decltype(m2[0])>::value, "expr unseq error");
-		static_assert(!is_unseq<decltype(m1[0] + m2[0])>::value, "expr unseq error");
-		static_assert(!is_unseq<decltype(m1[0] + m2[0])>::value, "expr unseq error");
+		static_assert(matrix_impl::is_unseq<decltype(m1[0])>::value, "expr unseq error");
+		static_assert(!matrix_impl::is_unseq<decltype(m2[0])>::value, "expr unseq error");
+		static_assert(!matrix_impl::is_unseq<decltype(m1[0] + m2[0])>::value, "expr unseq error");
+		static_assert(!matrix_impl::is_unseq<decltype(m1[0] + m2[0])>::value, "expr unseq error");
 	}
 }
 void row_op_tests()
@@ -1380,6 +1380,35 @@ void row_op_tests()
 
 	v[0] = 2 * -v[2];
 	assert((v == matrix<int>{ {22, 26, 30}, { 5, 41, 48 }, { -11, -13, -15 } }));
+
+	v[0] -= v[1];
+	assert((v == matrix<int>{ {17, -15, -18}, { 5, 41, 48 }, { -11, -13, -15 } }));
+
+	v[2] -= 2 * v[0];
+	assert((v == matrix<int>{ {17, -15, -18}, { 5, 41, 48 }, { -45, 17, 21 } }));
+
+	v[1] += v[0];
+	assert((v == matrix<int>{ {17, -15, -18}, { 22, 26, 30 }, { -45, 17, 21 } }));
+
+	v[0] += 3 * v[2];
+	assert((v == matrix<int>{ {-118, 36, 45}, { 22, 26, 30 }, { -45, 17, 21 } }));
+
+	v[0] += v[0];
+	assert((v == matrix<int>{ {-236, 72, 90}, { 22, 26, 30 }, { -45, 17, 21 } }));
+
+	v[0] -= v[0];
+	assert((v == matrix<int>{ {0, 0, 0}, { 22, 26, 30 }, { -45, 17, 21 } }));
+
+	{
+		typedef intrinsic<int> t;
+		matrix<t> m{ { (t)1, (t)3, (t)5 }, { (t)2, (t)4, (t)3 }, { (t)6, (t)2, (t)4 } };
+
+		m[1] = +m[0];
+		assert((m == matrix<t>{ { (t)1, (t)3, (t)5 }, { (t)1, (t)3, (t)5 }, { (t)6, (t)2, (t)4 } }));
+
+		m[0] = m[2].move();
+		assert((m == matrix<t>{ { (t)6, (t)2, (t)4 }, { (t)1, (t)3, (t)5 }, { (t)t::move_assign, (t)t::move_assign, (t)t::move_assign } }));
+	}
 }
 
 int main() try
