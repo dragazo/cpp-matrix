@@ -5,6 +5,7 @@
 #include <functional>
 #include <type_traits>
 #include <iterator>
+#include <cmath>
 
 #undef NDEBUG
 #include <cassert>
@@ -1409,6 +1410,23 @@ void row_op_tests()
 		m[0] = m[2].move();
 		assert((m == matrix<t>{ { (t)6, (t)2, (t)4 }, { (t)1, (t)3, (t)5 }, { (t)t::move_assign, (t)t::move_assign, (t)t::move_assign } }));
 	}
+	
+	auto abs = vectorize([](int a) { return std::abs(a); });
+	v[0] = abs(v[2]);
+	assert((v == matrix<int>{ {45, 17, 21}, { 22, 26, 30 }, { -45, 17, 21 } }));
+
+	auto signum = vectorize([](int a) { return a > 0 ? 1 : a < 0 ? -1 : 0; });
+	v[1] = signum(v[2]);
+	assert((v == matrix<int>{ {45, 17, 21}, { -1, 1, 1 }, { -45, 17, 21 } }));
+
+	v[1] = signum(-v[2]);
+	assert((v == matrix<int>{ {45, 17, 21}, { 1, -1, -1 }, { -45, 17, 21 } }));
+
+	v[1] = -signum(-v[2]);
+	assert((v == matrix<int>{ {45, 17, 21}, { -1, 1, 1 }, { -45, 17, 21 } }));
+
+	v[1] = -signum(v[2]);
+	assert((v == matrix<int>{ {45, 17, 21}, { 1, -1, -1 }, { -45, 17, 21 } }));
 }
 
 int main() try

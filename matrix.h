@@ -9,6 +9,7 @@
 #include <execution>
 #include <iterator>
 #include <functional>
+#include <tuple>
 
 namespace matrix_impl
 {
@@ -63,13 +64,15 @@ namespace matrix_impl
 
 	// ----------------------------------------------------------------------------------------------------
 
+	template<typename T> inline constexpr bool nocvref = std::is_same_v<std::remove_cv_t<std::remove_reference_t<T>>, T>;
+
 	template<typename A, typename OP>
 	struct unary_row_expr
 	{
 	private:
 		const A &a;
 	public:
-		static_assert(std::is_same_v<std::remove_cv_t<A>, A>, "A must not be cv qualified");
+		static_assert(nocvref<A>, "A must not be cv or ref qualified");
 		unary_row_expr(const A &_a) noexcept : a(_a) {}
 		decltype(auto) operator[](std::size_t i) const { return OP{}(a[i]); }
 		std::size_t size() const { return a.size(); }
@@ -81,8 +84,8 @@ namespace matrix_impl
 		const A &a;
 		const B &b;
 	public:
-		static_assert(std::is_same_v<std::remove_cv_t<A>, A>, "A must not be cv qualified");
-		static_assert(std::is_same_v<std::remove_cv_t<B>, B>, "B must not be cv qualified");
+		static_assert(nocvref<A>, "A must not be cv or ref qualified");
+		static_assert(nocvref<B>, "B must not be cv or ref qualified");
 		binary_row_expr(const A &_a, const B &_b) : a(_a), b(_b) { assert(a.size() == b.size()); }
 		decltype(auto) operator[](std::size_t i) const { return OP{}(a[i], b[i]); }
 		std::size_t size() const { return a.size(); }
@@ -94,8 +97,8 @@ namespace matrix_impl
 		const Vec &vec;
 		Scalar     scalar;
 	public:
-		static_assert(std::is_same_v<std::remove_cv_t<Vec>, Vec>, "Vec must not be cv qualified");
-		static_assert(std::is_same_v<std::remove_cv_t<std::remove_reference_t<Scalar>>, Scalar>, "Scalar must not be ref or cv qualified");
+		static_assert(nocvref<Vec>, "Vec must not be cv or ref qualified");
+		static_assert(nocvref<Scalar>, "Scalar must not be cv or ref qualified");
 		row_scalar_expr(const Vec &v, const Scalar &s) : vec(v), scalar(s) {}
 		row_scalar_expr(const Vec &v, Scalar &&s) : vec(v), scalar(std::move(s)) {}
 		decltype(auto) operator[](std::size_t i) const
@@ -105,13 +108,44 @@ namespace matrix_impl
 		}
 		std::size_t size() const { return vec.size(); }
 	};
+	template<typename F, typename Arg, typename ...Args>
+	struct row_func_expr
+	{
+	private:
+		const F &func;
+		std::tuple<const Arg&, const Args&...> args;
+
+		template<typename A> struct invoker;
+		template<std::size_t ...I>
+		struct invoker<std::index_sequence<I...>>
+		{
+			template<typename F, typename A>
+			decltype(auto) operator()(const F &f, const A &a, std::size_t i)
+			{
+				return f(std::get<I>(a)[i]...);
+			}
+		};
+	public:
+		static_assert(nocvref<F>, "F must not be cv or ref qualified");
+		static_assert(nocvref<Arg>, "Arg must not be cv or ref qualified");
+		static_assert((... && nocvref<Args>), "Args must not be cv or ref qualified");
+		row_func_expr(const F &f, const Arg &a1, const Args &...an) : func(f), args(a1, an...)  { assert((... && (a1.size() == an.size()))); }
+		decltype(auto) operator[](std::size_t i) const
+		{
+			return invoker<std::make_index_sequence<1 + sizeof...(Args)>>{}(func, args, i);
+		}
+		std::size_t size() const { return std::get<0>(args).size(); }
+	};
 
 	// ----------------------------------------------------------------------------------------------------
 
 	template<typename T> struct is_row_expr : std::false_type {};
 	template<typename T> struct is_row_view : std::false_type {};
 
-	template<typename T> inline constexpr bool experizable = is_row_expr<T>::value || is_row_view<T>::value;
+	template<typename T> inline constexpr bool row_exprish = is_row_expr<T>::value || is_row_view<T>::value;
+
+	// msvc has a bug where fold exprs in SFINAE fail to compile, so this is a workaround
+	template<typename ...T> inline constexpr bool all_row_exprish = (... && row_exprish<T>);
 
 	template<typename T> struct is_unseq : std::bool_constant<std::is_integral_v<T> || std::is_floating_point_v<T>> {};
 	template<typename T> struct is_unseq<T&> : std::bool_constant<is_unseq<T>::value> {};
@@ -220,14 +254,14 @@ namespace matrix_impl
 			std::for_each_n(exec_policy<T_cv&, decltype(expr[0])>(), val_iter<std::size_t>{ 0 }, count, [this, expr](std::size_t i) { vals[i] = expr[i]; });
 			return *this;
 		}
-		template<typename E, std::enable_if_t<experizable<E>, int> = 0>
+		template<typename E, std::enable_if_t<row_exprish<E>, int> = 0>
 		const _row_view &operator+=(const E &expr) const
 		{
 			assert(count == expr.size());
 			std::for_each_n(exec_policy<T_cv&, decltype(expr[0])>(), val_iter<std::size_t>{ 0 }, count, [this, expr](std::size_t i) { vals[i] += expr[i]; });
 			return *this;
 		}
-		template<typename E, std::enable_if_t<experizable<E>, int> = 0>
+		template<typename E, std::enable_if_t<row_exprish<E>, int> = 0>
 		const _row_view &operator-=(const E &expr) const
 		{
 			assert(count == expr.size());
@@ -313,37 +347,61 @@ namespace matrix_impl
 
 	// ----------------------------------------------------------------------------------------------------
 
-	template<typename A, typename OP> struct is_row_expr<unary_row_expr<A, OP>> : std::true_type {};
-	template<typename A, typename B, typename OP> struct is_row_expr<binary_row_expr<A, B, OP>> : std::true_type {};
-	template<typename Vec, typename Scalar, typename OP, bool left_scalar> struct is_row_expr<row_scalar_expr<Vec, Scalar, OP, left_scalar>> : std::true_type {};
+	template<typename A, typename OP>
+	struct is_row_expr<unary_row_expr<A, OP>> : std::true_type {};
+	template<typename A, typename B, typename OP>
+	struct is_row_expr<binary_row_expr<A, B, OP>> : std::true_type {};
+	template<typename Vec, typename Scalar, typename OP, bool left_scalar>
+	struct is_row_expr<row_scalar_expr<Vec, Scalar, OP, left_scalar>> : std::true_type {};
+	template<typename F, typename Arg, typename ...Args>
+	struct is_row_expr<row_func_expr<F, Arg, Args...>> : std::true_type {};
 
-	template<typename T_cv> struct is_unseq<_row_view<T_cv>> : std::bool_constant<is_unseq<std::remove_cv_t<T_cv>>::value> {};
+	template<typename T_cv>
+	struct is_unseq<_row_view<T_cv>> : std::bool_constant<is_unseq<std::remove_cv_t<T_cv>>::value> {};
+	template<typename A, typename OP>
+	struct is_unseq<unary_row_expr<A, OP>> : std::bool_constant<is_unseq<A>::value> {};
+	template<typename A, typename B, typename OP>
+	struct is_unseq<binary_row_expr<A, B, OP>> : std::bool_constant<is_unseq<A>::value && is_unseq<B>::value> {};
+	template<typename Vec, typename Scalar, typename OP, bool left_scalar>
+	struct is_unseq<row_scalar_expr<Vec, Scalar, OP, left_scalar>> : std::bool_constant<is_unseq<decltype(std::declval<Vec>()[0])>::value && is_unseq<Scalar>::value> {};
 
-	template<typename A, typename OP> struct is_unseq<unary_row_expr<A, OP>> : std::bool_constant<is_unseq<A>::value> {};
-	template<typename A, typename B, typename OP> struct is_unseq<binary_row_expr<A, B, OP>> : std::bool_constant<is_unseq<A>::value && is_unseq<B>::value> {};
-	template<typename Vec, typename Scalar, typename OP, bool left_scalar> struct is_unseq<row_scalar_expr<Vec, Scalar, OP, left_scalar>> : std::bool_constant<is_unseq<decltype(std::declval<Vec>()[0])>::value && is_unseq<Scalar>::value> {};
-
-	template<typename T_cv> struct is_row_view<_row_view<T_cv>> : std::true_type {};
+	template<typename T_cv>
+	struct is_row_view<_row_view<T_cv>> : std::true_type {};
 
 	// ----------------------------------------------------------------------------------------------------
 
-	template<typename A, std::enable_if_t<experizable<A>, int> = 0>
+	template<typename A, std::enable_if_t<row_exprish<A>, int> = 0>
 	auto operator+(const A &a) noexcept { return unary_row_expr<A, noop>{ a }; }
-	template<typename A, std::enable_if_t<experizable<A>, int> = 0>
+	template<typename A, std::enable_if_t<row_exprish<A>, int> = 0>
 	auto operator-(const A &a) noexcept { return unary_row_expr<A, std::negate<>>{ a }; }
 
-	template<typename A, typename B, std::enable_if_t<experizable<A> && experizable<B>, int> = 0>
+	template<typename A, typename B, std::enable_if_t<row_exprish<A> && row_exprish<B>, int> = 0>
 	auto operator+(const A &a, const B &b) noexcept { return binary_row_expr<A, B, std::plus<>>{ a, b }; }
-	template<typename A, typename B, std::enable_if_t<experizable<A> && experizable<B>, int> = 0>
+	template<typename A, typename B, std::enable_if_t<row_exprish<A> && row_exprish<B>, int> = 0>
 	auto operator-(const A &a, const B &b) noexcept { return binary_row_expr<A, B, std::minus<>>{ a, b }; }
 
-	template<typename Vec, typename Scalar, std::enable_if_t<experizable<Vec> && !std::is_same_v<decltype((*(const Vec*)0)[0] * (*(const std::decay_t<Scalar>*)0)), void> , int> = 0>
+	template<typename Vec, typename Scalar, std::enable_if_t<row_exprish<Vec> && !std::is_same_v<decltype((*(const Vec*)0)[0] * (*(const std::decay_t<Scalar>*)0)), void> , int> = 0>
 	auto operator*(const Vec &vec, Scalar &&scalar) noexcept { return row_scalar_expr<Vec, std::decay_t<Scalar>, std::multiplies<>, false>{ vec, std::forward<Scalar>(scalar) }; }
-	template<typename Vec, typename Scalar, std::enable_if_t<experizable<Vec> && !std::is_same_v<decltype((*(const std::decay_t<Scalar>*)0) * (*(const Vec*)0)[0]), void>, int> = 0>
+	template<typename Vec, typename Scalar, std::enable_if_t<row_exprish<Vec> && !std::is_same_v<decltype((*(const std::decay_t<Scalar>*)0) * (*(const Vec*)0)[0]), void>, int> = 0>
 	auto operator*(Scalar &&scalar, const Vec &vec) noexcept { return row_scalar_expr<Vec, std::decay_t<Scalar>, std::multiplies<>, true>{ vec, std::forward<Scalar>(scalar) }; }
 
-	template<typename Vec, typename Scalar, std::enable_if_t<experizable<Vec> && !std::is_same_v<decltype((*(const Vec*)0)[0] * (*(const std::decay_t<Scalar>*)0)), void>, int> = 0>
+	template<typename Vec, typename Scalar, std::enable_if_t<row_exprish<Vec> && !std::is_same_v<decltype((*(const Vec*)0)[0] * (*(const std::decay_t<Scalar>*)0)), void>, int> = 0>
 	auto operator/(const Vec &vec, Scalar &&scalar) noexcept { return row_scalar_expr<Vec, std::decay_t<Scalar>, std::divides<>, false>{ vec, std::forward<Scalar>(scalar) }; }
+
+	template<typename F>
+	struct vectorized_func
+	{
+	private:
+		F f;
+	public:
+		static_assert(nocvref<F>, "F must not be cv or ref qualified");
+
+		explicit vectorized_func(const F &_f) : f(_f) {}
+		explicit vectorized_func(F &&_f) : f(std::move(_f)) {}
+
+		template<typename Arg, typename ...Args, std::enable_if_t<all_row_exprish<Arg, Args...>, int> = 0>
+		auto operator()(const Arg &a1, const Args &...an) { return row_func_expr<F, Arg, Args...> { f, a1, an... }; }
+	};
 
 	// ----------------------------------------------------------------------------------------------------
 
@@ -1149,9 +1207,16 @@ namespace matrix_impl
 	bool operator!=(const matrix<T, Allocator> &a, const matrix<T, Allocator> &b) { return !(a == b); }
 }
 
+// represents a matrix containing values of numeric type T
 template<typename T, typename Allocator = std::allocator<T>>
 using matrix = matrix_impl::matrix<T, Allocator>;
 
+// exception type thrown for using matrices of incompatible sizes
 using matrix_impl::matrix_size_error;
+
+// given a function object f, returns a vectorized form that can be used on rows/matrices in template expressions.
+// it is undefined behavior if the function has race conditions in parallel context.
+template<typename F>
+decltype(auto) vectorize(F &&f) { return matrix_impl::vectorized_func<std::decay_t<F>> { std::forward<F>(f) }; }
 
 #endif
