@@ -669,6 +669,58 @@ void access_tests()
 	assert(m.flat().size() == m.size());
 	assert(m.size() == m.rows() * m.cols());
 }
+
+void reshape_tests()
+{
+	matrix<int> m = { { 1, 2, 3 }, { 4, 5, 6 } };
+
+	m.reshape(3, 2);
+	assert(m.rows() == 3);
+	assert(m.cols() == 2);
+	assert(m.size() == 6);
+	assert(!m.empty());
+	assert((m == matrix<int>{ { 1, 2 }, { 3, 4 }, { 5, 6 } }));
+
+	m.reshape(6, 1);
+	assert(m.rows() == 6);
+	assert(m.cols() == 1);
+	assert(m.size() == 6);
+	assert(!m.empty());
+	assert((m == matrix<int>{ { 1 }, { 2 }, { 3 }, { 4 }, { 5 }, { 6 } }));
+
+	m.reshape(1, 6);
+	assert(m.rows() == 1);
+	assert(m.cols() == 6);
+	assert(m.size() == 6);
+	assert(!m.empty());
+	assert((m == matrix<int>{ { 1, 2, 3, 4, 5, 6 } }));
+
+	m.clear();
+	assert(m.rows() == 0);
+	assert(m.cols() == 0);
+	assert(m.size() == 0);
+	assert(m.empty());
+
+	m.reshape(0, 5);
+	assert(m.rows() == 0);
+	assert(m.cols() == 0);
+	assert(m.size() == 0);
+	assert(m.empty());
+
+	m.reshape(4, 0);
+	assert(m.rows() == 0);
+	assert(m.cols() == 0);
+	assert(m.size() == 0);
+	assert(m.empty());
+
+	m.reshape(0, 0);
+	assert(m.rows() == 0);
+	assert(m.cols() == 0);
+	assert(m.size() == 0);
+	assert(m.empty());
+
+	assert_throws(m.reshape(4, 1), std::invalid_argument);
+}
 void resize_flat_tests()
 {
 	matrix<int> m(4, 5);
@@ -1044,6 +1096,7 @@ void resize_tests()
 	assert(cpy.empty());
 	assert(cpy != m);
 }
+
 void append_cols_tests()
 {
 	typedef intrinsic<int> t;
@@ -1105,6 +1158,97 @@ void append_cols_tests()
 		{ (t)100, (t)(-123), (t)4, (t)5, (t)6, (t)100, (t)(-123), (t)100, (t)(-123), (t)4, (t)5, (t)6, (t)100, (t)(-123) },
 		{ (t)54, (t)65, (t)7, (t)8, (t)9, (t)54, (t)65, (t)54, (t)65, (t)7, (t)8, (t)9, (t)54, (t)65 },
 		{ (t)7, (t)0, (t)10, (t)11, (t)12, (t)7, (t)0, (t)7, (t)0, (t)10, (t)11, (t)12, (t)7, (t)0 } }));
+
+	{
+		matrix<t> other = { { (t)1, (t)2 }, { (t)3, (t)4 } };
+		assert_throws(n.append_cols(other), matrix_size_error);
+		assert_throws(other.append_cols(n), matrix_size_error);
+	}
+
+	n.clear();
+	assert(n.rows() == 0);
+	assert(n.cols() == 0);
+	assert(n.size() == 0);
+	assert(n.empty());
+
+	n.append_cols(n);
+	assert(n.rows() == 0);
+	assert(n.cols() == 0);
+	assert(n.size() == 0);
+	assert(n.empty());
+}
+void append_rows_tests()
+{
+	typedef intrinsic<int> t;
+	matrix<t> n = { {(t)1, (t)6, (t)4} };
+	matrix<t> m = { {(t)3, (t)7, (t)9} };
+
+	assert(n.rows() == 1);
+	assert(n.cols() == 3);
+	assert(n.size() == 3);
+	assert(!n.empty());
+	
+	assert(m.rows() == 1);
+	assert(m.cols() == 3);
+	assert(m.size() == 3);
+	assert(!m.empty());
+
+	n.append_rows(m);
+	assert(n.rows() == 2);
+	assert(n.cols() == 3);
+	assert(n.size() == 6);
+	assert(!n.empty());
+
+	assert((n == matrix<t>{ {(t)1, (t)6, (t)4}, { (t)3, (t)7, (t)9 } }));
+
+	m.append_rows(n);
+	assert(m.rows() == 3);
+	assert(m.cols() == 3);
+	assert(m.size() == 9);
+	assert(!m.empty());
+
+	assert((m == matrix<t>{ {(t)3, (t)7, (t)9}, { (t)1, (t)6, (t)4 }, { (t)3, (t)7, (t)9 } }));
+
+	n.append_rows(std::move(m));
+	assert(n.rows() == 5);
+	assert(n.cols() == 3);
+	assert(n.size() == 15);
+	assert(!n.empty());
+
+	assert(m.rows() == 0);
+	assert(m.cols() == 0);
+	assert(m.size() == 0);
+	assert(m.empty());
+
+	assert((n == matrix<t>{ {(t)1, (t)6, (t)4}, { (t)3, (t)7, (t)9 }, { (t)3, (t)7, (t)9 }, { (t)1, (t)6, (t)4 }, { (t)3, (t)7, (t)9 } }));
+	assert((m == matrix<t>{}));
+
+	n.append_rows(n);
+	assert(n.rows() == 10);
+	assert(n.cols() == 3);
+	assert(n.size() == 30);
+	assert(!n.empty());
+
+	assert((n == matrix<t>{ {(t)1, (t)6, (t)4}, { (t)3, (t)7, (t)9 }, { (t)3, (t)7, (t)9 }, { (t)1, (t)6, (t)4 }, { (t)3, (t)7, (t)9 },
+		{ (t)1, (t)6, (t)4 }, { (t)3, (t)7, (t)9 }, { (t)3, (t)7, (t)9 }, { (t)1, (t)6, (t)4 }, { (t)3, (t)7, (t)9 }}));
+
+	{
+		matrix<t> other = { { (t)1, (t)2 }, { (t)3, (t)4 } };
+		assert_throws(n.append_rows(other), matrix_size_error);
+		assert_throws(other.append_rows(n), matrix_size_error);
+	}
+
+	n.clear();
+	assert(n.rows() == 0);
+	assert(n.cols() == 0);
+	assert(n.size() == 0);
+	assert(n.empty());
+
+	n.append_rows(n);
+	assert(n.rows() == 0);
+	assert(n.cols() == 0);
+	assert(n.size() == 0);
+	assert(n.empty());
 }
 
 void comparison_tests()
@@ -1332,6 +1476,36 @@ void unseq_tests()
 		static_assert(!matrix_impl::is_unseq<decltype(m1[0] + m2[0])>::value, "expr unseq error");
 		static_assert(!matrix_impl::is_unseq<decltype(m1[0] + m2[0])>::value, "expr unseq error");
 	}
+	{
+		matrix<int> m1 = { { 1, 2, 3 }, { 4, 5, 6 }, { 7, 8, 9 } };
+		auto signum = vectorize([](int v) { return v > 0 ? 1 : v < 0 ? -1 : 0; });
+
+		static_assert(matrix_impl::is_unseq<decltype(signum(m1[1]))>::value, "func expr unseq error");
+		static_assert(matrix_impl::is_unseq<decltype(-signum(m1[1]))>::value, "func expr unseq error");
+		static_assert(matrix_impl::is_unseq<decltype(signum(-m1[1]))>::value, "func expr unseq error");
+		static_assert(matrix_impl::is_unseq<decltype(signum(m1[1] - m1[2]))>::value, "func expr unseq error");
+		static_assert(matrix_impl::is_unseq<decltype(signum(m1[1]) + m1[2])>::value, "func expr unseq error");
+	}
+	{
+		matrix<int> m1 = { { 1, 2, 3 }, { 4, 5, 6 }, { 7, 8, 9 } };
+		auto signum = vectorize<true>([](int v) { return v > 0 ? 1 : v < 0 ? -1 : 0; });
+
+		static_assert(matrix_impl::is_unseq<decltype(signum(m1[1]))>::value, "func expr unseq error");
+		static_assert(matrix_impl::is_unseq<decltype(-signum(m1[1]))>::value, "func expr unseq error");
+		static_assert(matrix_impl::is_unseq<decltype(signum(-m1[1]))>::value, "func expr unseq error");
+		static_assert(matrix_impl::is_unseq<decltype(signum(m1[1] - m1[2]))>::value, "func expr unseq error");
+		static_assert(matrix_impl::is_unseq<decltype(signum(m1[1]) + m1[2])>::value, "func expr unseq error");
+	}
+	{
+		matrix<int> m1 = { { 1, 2, 3 }, { 4, 5, 6 }, { 7, 8, 9 } };
+		auto signum = vectorize<false>([](int v) { return v > 0 ? 1 : v < 0 ? -1 : 0; });
+
+		static_assert(!matrix_impl::is_unseq<decltype(signum(m1[1]))>::value, "func expr unseq error");
+		static_assert(!matrix_impl::is_unseq<decltype(-signum(m1[1]))>::value, "func expr unseq error");
+		static_assert(!matrix_impl::is_unseq<decltype(signum(-m1[1]))>::value, "func expr unseq error");
+		static_assert(!matrix_impl::is_unseq<decltype(signum(m1[1] - m1[2]))>::value, "func expr unseq error");
+		static_assert(!matrix_impl::is_unseq<decltype(signum(m1[1]) + m1[2])>::value, "func expr unseq error");
+	}
 }
 void row_op_tests()
 {
@@ -1439,11 +1613,15 @@ int main() try
 	init_list_tests();
 	iter_tests();
 	access_tests();
+
+	reshape_tests();
 	resize_flat_tests();
 	resize_cols_test();
 	resize_rows_test();
 	resize_tests();
+
 	append_cols_tests();
+	append_rows_tests();
 
 	comparison_tests();
 

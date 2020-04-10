@@ -74,8 +74,8 @@ namespace matrix_impl
 	public:
 		static_assert(nocvref<A>, "A must not be cv or ref qualified");
 		unary_row_expr(const A &_a) noexcept : a(_a) {}
-		decltype(auto) operator[](std::size_t i) const { return OP{}(a[i]); }
-		std::size_t size() const { return a.size(); }
+		[[nodiscard]] decltype(auto) operator[](std::size_t i) const { return OP{}(a[i]); }
+		[[nodiscard]] std::size_t size() const { return a.size(); }
 	};
 	template<typename A, typename B, typename OP>
 	struct binary_row_expr
@@ -87,8 +87,8 @@ namespace matrix_impl
 		static_assert(nocvref<A>, "A must not be cv or ref qualified");
 		static_assert(nocvref<B>, "B must not be cv or ref qualified");
 		binary_row_expr(const A &_a, const B &_b) : a(_a), b(_b) { assert(a.size() == b.size()); }
-		decltype(auto) operator[](std::size_t i) const { return OP{}(a[i], b[i]); }
-		std::size_t size() const { return a.size(); }
+		[[nodiscard]] decltype(auto) operator[](std::size_t i) const { return OP{}(a[i], b[i]); }
+		[[nodiscard]] std::size_t size() const { return a.size(); }
 	};
 	template<typename Vec, typename Scalar, typename OP, bool left_scalar>
 	struct row_scalar_expr
@@ -101,14 +101,14 @@ namespace matrix_impl
 		static_assert(nocvref<Scalar>, "Scalar must not be cv or ref qualified");
 		row_scalar_expr(const Vec &v, const Scalar &s) : vec(v), scalar(s) {}
 		row_scalar_expr(const Vec &v, Scalar &&s) : vec(v), scalar(std::move(s)) {}
-		decltype(auto) operator[](std::size_t i) const
+		[[nodiscard]] decltype(auto) operator[](std::size_t i) const
 		{
 			if constexpr (left_scalar) return OP{}(scalar, vec[i]);
 			else return OP{}(vec[i], scalar);
 		}
-		std::size_t size() const { return vec.size(); }
+		[[nodiscard]] std::size_t size() const { return vec.size(); }
 	};
-	template<typename F, typename Arg, typename ...Args>
+	template<bool unseq, typename F, typename Arg, typename ...Args>
 	struct row_func_expr
 	{
 	private:
@@ -120,7 +120,7 @@ namespace matrix_impl
 		struct invoker<std::index_sequence<I...>>
 		{
 			template<typename F, typename A>
-			decltype(auto) operator()(const F &f, const A &a, std::size_t i)
+			[[nodiscard]] decltype(auto) operator()(const F &f, const A &a, std::size_t i)
 			{
 				return f(std::get<I>(a)[i]...);
 			}
@@ -130,11 +130,11 @@ namespace matrix_impl
 		static_assert(nocvref<Arg>, "Arg must not be cv or ref qualified");
 		static_assert((... && nocvref<Args>), "Args must not be cv or ref qualified");
 		row_func_expr(const F &f, const Arg &a1, const Args &...an) : func(f), args(a1, an...)  { assert((... && (a1.size() == an.size()))); }
-		decltype(auto) operator[](std::size_t i) const
+		[[nodiscard]] decltype(auto) operator[](std::size_t i) const
 		{
 			return invoker<std::make_index_sequence<1 + sizeof...(Args)>>{}(func, args, i);
 		}
-		std::size_t size() const { return std::get<0>(args).size(); }
+		[[nodiscard]] std::size_t size() const { return std::get<0>(args).size(); }
 	};
 
 	// ----------------------------------------------------------------------------------------------------
@@ -347,48 +347,25 @@ namespace matrix_impl
 
 	// ----------------------------------------------------------------------------------------------------
 
-	template<typename A, typename OP>
-	struct is_row_expr<unary_row_expr<A, OP>> : std::true_type {};
-	template<typename A, typename B, typename OP>
-	struct is_row_expr<binary_row_expr<A, B, OP>> : std::true_type {};
-	template<typename Vec, typename Scalar, typename OP, bool left_scalar>
-	struct is_row_expr<row_scalar_expr<Vec, Scalar, OP, left_scalar>> : std::true_type {};
-	template<typename F, typename Arg, typename ...Args>
-	struct is_row_expr<row_func_expr<F, Arg, Args...>> : std::true_type {};
-
-	template<typename T_cv>
-	struct is_unseq<_row_view<T_cv>> : std::bool_constant<is_unseq<std::remove_cv_t<T_cv>>::value> {};
-	template<typename A, typename OP>
-	struct is_unseq<unary_row_expr<A, OP>> : std::bool_constant<is_unseq<A>::value> {};
-	template<typename A, typename B, typename OP>
-	struct is_unseq<binary_row_expr<A, B, OP>> : std::bool_constant<is_unseq<A>::value && is_unseq<B>::value> {};
-	template<typename Vec, typename Scalar, typename OP, bool left_scalar>
-	struct is_unseq<row_scalar_expr<Vec, Scalar, OP, left_scalar>> : std::bool_constant<is_unseq<decltype(std::declval<Vec>()[0])>::value && is_unseq<Scalar>::value> {};
-
-	template<typename T_cv>
-	struct is_row_view<_row_view<T_cv>> : std::true_type {};
-
-	// ----------------------------------------------------------------------------------------------------
-
 	template<typename A, std::enable_if_t<row_exprish<A>, int> = 0>
-	auto operator+(const A &a) noexcept { return unary_row_expr<A, noop>{ a }; }
+	[[nodiscard]] auto operator+(const A &a) noexcept { return unary_row_expr<A, noop>{ a }; }
 	template<typename A, std::enable_if_t<row_exprish<A>, int> = 0>
-	auto operator-(const A &a) noexcept { return unary_row_expr<A, std::negate<>>{ a }; }
+	[[nodiscard]] auto operator-(const A &a) noexcept { return unary_row_expr<A, std::negate<>>{ a }; }
 
 	template<typename A, typename B, std::enable_if_t<row_exprish<A> && row_exprish<B>, int> = 0>
-	auto operator+(const A &a, const B &b) noexcept { return binary_row_expr<A, B, std::plus<>>{ a, b }; }
+	[[nodiscard]] auto operator+(const A &a, const B &b) noexcept { return binary_row_expr<A, B, std::plus<>>{ a, b }; }
 	template<typename A, typename B, std::enable_if_t<row_exprish<A> && row_exprish<B>, int> = 0>
-	auto operator-(const A &a, const B &b) noexcept { return binary_row_expr<A, B, std::minus<>>{ a, b }; }
+	[[nodiscard]] auto operator-(const A &a, const B &b) noexcept { return binary_row_expr<A, B, std::minus<>>{ a, b }; }
 
 	template<typename Vec, typename Scalar, std::enable_if_t<row_exprish<Vec> && !std::is_same_v<decltype((*(const Vec*)0)[0] * (*(const std::decay_t<Scalar>*)0)), void> , int> = 0>
-	auto operator*(const Vec &vec, Scalar &&scalar) noexcept { return row_scalar_expr<Vec, std::decay_t<Scalar>, std::multiplies<>, false>{ vec, std::forward<Scalar>(scalar) }; }
+	[[nodiscard]] auto operator*(const Vec &vec, Scalar &&scalar) noexcept { return row_scalar_expr<Vec, std::decay_t<Scalar>, std::multiplies<>, false>{ vec, std::forward<Scalar>(scalar) }; }
 	template<typename Vec, typename Scalar, std::enable_if_t<row_exprish<Vec> && !std::is_same_v<decltype((*(const std::decay_t<Scalar>*)0) * (*(const Vec*)0)[0]), void>, int> = 0>
-	auto operator*(Scalar &&scalar, const Vec &vec) noexcept { return row_scalar_expr<Vec, std::decay_t<Scalar>, std::multiplies<>, true>{ vec, std::forward<Scalar>(scalar) }; }
+	[[nodiscard]] auto operator*(Scalar &&scalar, const Vec &vec) noexcept { return row_scalar_expr<Vec, std::decay_t<Scalar>, std::multiplies<>, true>{ vec, std::forward<Scalar>(scalar) }; }
 
 	template<typename Vec, typename Scalar, std::enable_if_t<row_exprish<Vec> && !std::is_same_v<decltype((*(const Vec*)0)[0] * (*(const std::decay_t<Scalar>*)0)), void>, int> = 0>
-	auto operator/(const Vec &vec, Scalar &&scalar) noexcept { return row_scalar_expr<Vec, std::decay_t<Scalar>, std::divides<>, false>{ vec, std::forward<Scalar>(scalar) }; }
+	[[nodiscard]] auto operator/(const Vec &vec, Scalar &&scalar) noexcept { return row_scalar_expr<Vec, std::decay_t<Scalar>, std::divides<>, false>{ vec, std::forward<Scalar>(scalar) }; }
 
-	template<typename F>
+	template<bool unseq, typename F>
 	struct vectorized_func
 	{
 	private:
@@ -400,8 +377,33 @@ namespace matrix_impl
 		explicit vectorized_func(F &&_f) : f(std::move(_f)) {}
 
 		template<typename Arg, typename ...Args, std::enable_if_t<all_row_exprish<Arg, Args...>, int> = 0>
-		auto operator()(const Arg &a1, const Args &...an) { return row_func_expr<F, Arg, Args...> { f, a1, an... }; }
+		[[nodiscard]] auto operator()(const Arg &a1, const Args &...an) { return row_func_expr<unseq, F, Arg, Args...> { f, a1, an... }; }
 	};
+
+	// ----------------------------------------------------------------------------------------------------
+
+	template<typename A, typename OP>
+	struct is_row_expr<unary_row_expr<A, OP>> : std::true_type {};
+	template<typename A, typename B, typename OP>
+	struct is_row_expr<binary_row_expr<A, B, OP>> : std::true_type {};
+	template<typename Vec, typename Scalar, typename OP, bool left_scalar>
+	struct is_row_expr<row_scalar_expr<Vec, Scalar, OP, left_scalar>> : std::true_type {};
+	template<bool unseq, typename F, typename Arg, typename ...Args>
+	struct is_row_expr<row_func_expr<unseq, F, Arg, Args...>> : std::true_type {};
+
+	template<typename T_cv>
+	struct is_unseq<_row_view<T_cv>> : std::bool_constant<is_unseq<std::remove_cv_t<T_cv>>::value> {};
+	template<typename A, typename OP>
+	struct is_unseq<unary_row_expr<A, OP>> : std::bool_constant<is_unseq<A>::value> {};
+	template<typename A, typename B, typename OP>
+	struct is_unseq<binary_row_expr<A, B, OP>> : std::bool_constant<is_unseq<A>::value && is_unseq<B>::value> {};
+	template<typename Vec, typename Scalar, typename OP, bool left_scalar>
+	struct is_unseq<row_scalar_expr<Vec, Scalar, OP, left_scalar>> : std::bool_constant<is_unseq<decltype(std::declval<Vec>()[0])>::value && is_unseq<Scalar>::value> {};
+	template<bool unseq, typename F, typename Arg, typename ...Args>
+	struct is_unseq<row_func_expr<unseq, F, Arg, Args...>> : std::bool_constant<unseq> {};
+
+	template<typename T_cv>
+	struct is_row_view<_row_view<T_cv>> : std::true_type {};
 
 	// ----------------------------------------------------------------------------------------------------
 
@@ -410,12 +412,12 @@ namespace matrix_impl
 	// T is required to be default constructible.
 	// T is required to be constructible via the expression (T)v where v is int.
 	// the above operations must be safe in parallel context.
-	template<typename T, typename Allocator> //typename Allocator = vectorizable_allocator<T>>
+	template<typename T, typename Allocator>
 	class matrix
 	{
 	public: // -- requirements -- //
-
-		static_assert(std::is_same_v<T, std::remove_cv_t<std::remove_reference_t<T>>>, "T cannot be ref or cv qualified");
+		
+		static_assert(nocvref<T>, "T cannot be ref or cv qualified");
 		static_assert(std::is_default_constructible_v<T>, "T is required to be default constructible");
 		static_assert(std::is_constructible_v<T, int>, "T is required to be constructible from int");
 
@@ -451,7 +453,7 @@ namespace matrix_impl
 	private: // -- helper functions -- //
 
 		// effectively returns |a - b| but does not require abs() to be overloaded
-		static T dist(const T &a, const T &b)
+		[[nodiscard]] static T dist(const T &a, const T &b)
 		{
 			return a >= b ? a - b : b - a;
 		}
@@ -553,16 +555,16 @@ namespace matrix_impl
 	public: // -- element indexing -- //
 
 		// gets the element at the specified row and col
-		T &operator()(std::size_t row, std::size_t col) { return data[row * c + col]; }
-		const T &operator()(std::size_t row, std::size_t col) const { return data[row * c + col]; }
+		[[nodiscard]] T &operator()(std::size_t row, std::size_t col) { return data[row * c + col]; }
+		[[nodiscard]] const T &operator()(std::size_t row, std::size_t col) const { return data[row * c + col]; }
 
 		// gets the element at the specified row and col, with bounds checking
-		T &at(std::size_t row, std::size_t col)
+		[[nodiscard]] T &at(std::size_t row, std::size_t col)
 		{
 			if (row >= r || col >= c) throw std::out_of_range("matrix position out of bounds");
 			return operator()(row, col);
 		}
-		const T &at(std::size_t row, std::size_t col) const
+		[[nodiscard]] const T &at(std::size_t row, std::size_t col) const
 		{
 			if (row >= r || col >= c) throw std::out_of_range("matrix position out of bounds");
 			return operator()(row, col);
@@ -571,16 +573,16 @@ namespace matrix_impl
 	public: // -- row indexing -- //
 
 		// gets a view into the specified row
-		row_view operator[](std::size_t row) { return { data.data() + row * c, c }; }
-		const_row_view operator[](std::size_t row) const { return { data.data() + row * c, c }; }
+		[[nodiscard]] row_view operator[](std::size_t row) { return { data.data() + row * c, c }; }
+		[[nodiscard]] const_row_view operator[](std::size_t row) const { return { data.data() + row * c, c }; }
 
 		// gets a view into the specified row, with bounds checking
-		row_view at(std::size_t row)
+		[[nodiscard]] row_view at(std::size_t row)
 		{
 			if (row >= r) throw std::out_of_range("row out of bounds");
 			return operator[](row);
 		}
-		const_row_view at(std::size_t row) const
+		[[nodiscard]] const_row_view at(std::size_t row) const
 		{
 			if (row >= r) throw std::out_of_range("row out of bounds");
 			return operator[](row);
@@ -589,45 +591,45 @@ namespace matrix_impl
 	public: // -- iterators -- //
 
 		// iterates through each row in the matrix
-		row_iter begin() noexcept { return { data.data(), c }; }
-		row_iter end() noexcept { return { data.data() + data.size(), c }; }
+		[[nodiscard]] row_iter begin() noexcept { return { data.data(), c }; }
+		[[nodiscard]] row_iter end() noexcept { return { data.data() + data.size(), c }; }
 
-		const_row_iter begin() const noexcept { return { data.data(), c }; }
-		const_row_iter end() const noexcept { return { data.data() + data.size(), c }; }
+		[[nodiscard]] const_row_iter begin() const noexcept { return { data.data(), c }; }
+		[[nodiscard]] const_row_iter end() const noexcept { return { data.data() + data.size(), c }; }
 
-		const_row_iter cbegin() const noexcept { return begin(); }
-		const_row_iter cend() const noexcept { return end(); }
+		[[nodiscard]] const_row_iter cbegin() const noexcept { return begin(); }
+		[[nodiscard]] const_row_iter cend() const noexcept { return end(); }
 
 		// iteratres through each row in the matrix in reverse order
-		reverse_row_iter rbegin() noexcept { return { end() }; }
-		reverse_row_iter rend() noexcept { return { begin() }; }
+		[[nodiscard]] reverse_row_iter rbegin() noexcept { return { end() }; }
+		[[nodiscard]] reverse_row_iter rend() noexcept { return { begin() }; }
 
-		const_reverse_row_iter rbegin() const noexcept { return { end() }; }
-		const_reverse_row_iter rend() const noexcept { return { begin() }; }
+		[[nodiscard]] const_reverse_row_iter rbegin() const noexcept { return { end() }; }
+		[[nodiscard]] const_reverse_row_iter rend() const noexcept { return { begin() }; }
 
-		const_reverse_row_iter crbegin() const noexcept { return rbegin(); }
-		const_reverse_row_iter crend() const noexcept { return rend(); }
+		[[nodiscard]] const_reverse_row_iter crbegin() const noexcept { return rbegin(); }
+		[[nodiscard]] const_reverse_row_iter crend() const noexcept { return rend(); }
 
 	public: // -- views -- //
 
 		// views the entire matrix as a flattened array (row major order)
-		flat_view flat() noexcept { return { data.data(), data.size() }; }
-		const_flat_view flat() const noexcept { return { data.data(), data.size() }; }
+		[[nodiscard]] flat_view flat() noexcept { return { data.data(), data.size() }; }
+		[[nodiscard]] const_flat_view flat() const noexcept { return { data.data(), data.size() }; }
 
 	public: // -- ctor / dtor / asgn -- //
 
 		// creates an empty matrix (0x0)
-		matrix() noexcept = default;
+		[[nodiscard]] matrix() noexcept = default;
 
-		matrix(const matrix &other) = default;
+		[[nodiscard]] matrix(const matrix &other) = default;
 		matrix &operator=(const matrix &other) = default;
 
 		// constructs from another matrix by using its allocated resources.
 		// other is guaranteed to be empty() after this operation.
-		matrix(matrix &&other) noexcept : data(std::move(other.data)), r(std::exchange(other.r, 0)), c(std::exchange(other.c, 0)) {}
+		[[nodiscard]] matrix(matrix &&other) noexcept : data(std::move(other.data)), r(std::exchange(other.r, 0)), c(std::exchange(other.c, 0)) {}
 		// copies from another matrix via move semantics.
 		// other is guaranteed to be empty() after this operation.
-		matrix &operator=(matrix &&other) noexcept(noexcept(*(decltype(data)*)0 = std::declval<decltype(data)>()))
+		matrix &operator=(matrix &&other) noexcept(std::is_nothrow_move_assignable_v<decltype(data)>)
 		{
 			if (this != &other)
 			{
@@ -642,16 +644,16 @@ namespace matrix_impl
 
 		// creates a matrix with the specified dimensions.
 		// elements are copied from val.
-		matrix(std::size_t rows, std::size_t cols, const T &val)
+		[[nodiscard]] matrix(std::size_t rows, std::size_t cols, const T &val)
 		{
 			resize_flat(rows, cols, val);
 		}
 		// creates a matrix with the specified dimensions.
 		// elements are defaulted to zero.
-		matrix(std::size_t rows, std::size_t cols) : matrix(rows, cols, (T)0) {}
+		[[nodiscard]] matrix(std::size_t rows, std::size_t cols) : matrix(rows, cols, (T)0) {}
 
 		// creates a matrix with the given values
-		matrix(std::initializer_list<std::initializer_list<T>> vals)
+		[[nodiscard]] matrix(std::initializer_list<std::initializer_list<T>> vals)
 		{
 			*this = vals;
 		}
@@ -684,14 +686,14 @@ namespace matrix_impl
 	public: // -- shape utilities -- //
 
 		// gets the number of rows in the matrix
-		std::size_t rows() const { return r; }
+		[[nodiscard]] std::size_t rows() const noexcept { return r; }
 		// gets the number of columns in the matrix
-		std::size_t cols() const { return c; }
+		[[nodiscard]] std::size_t cols() const noexcept { return c; }
 
 		// returns the total number of elements in the matrix (rows * cols)
-		std::size_t size() const { return data.size(); }
+		[[nodiscard]] std::size_t size() const noexcept { return data.size(); }
 		// returns the current capacity of the matrix (as a flattened array)
-		std::size_t capacity() const { return data.capacity(); }
+		[[nodiscard]] std::size_t capacity() const noexcept { return data.capacity(); }
 
 		// requests the matrix to set aside space for the specified number of total elements.
 		// contents of the matrix are preserved.
@@ -707,13 +709,26 @@ namespace matrix_impl
 		}
 
 		// returns true if the matrix is empty (0x0)
-		bool empty() const { return data.empty(); }
+		[[nodiscard]] bool empty() const noexcept { return data.empty(); }
 		// sets the matrix to the empty state (0x0)
-		void clear()
+		void clear() noexcept
 		{
 			data.clear();
 			r = 0;
 			c = 0;
+		}
+
+		// changes the dimensions of the matrix without changing the flattened positions of elements.
+		// throws invalid_argument if the total number of elements would be different than what is currently contained.
+		// equivalent to resize_flat() except that no elements are ever removed or inserted.
+		void reshape(std::size_t rows, std::size_t cols)
+		{
+			if (data.size() != rows * cols) throw std::invalid_argument("attempt to reshape matrix to different size");
+			if (data.size() != 0)
+			{
+				r = rows;
+				c = cols;
+			}
 		}
 
 		// resizes the matrix, preserving the flattened positions of any pre-existing elements present in both sizes.
@@ -851,9 +866,33 @@ namespace matrix_impl
 			}
 		}
 
+		// appends the rows of another matrix to the bottom of this one (allows self-appending).
+		// throws matrix_size_error rif the two matrices differ in number of rows.
+		// if other is passed as rvalue, other is guaranteed to be empty() after this operation.
+		// if self-appending, other should not be passed as rvalue.
+		template<typename U, std::enable_if_t<std::is_same_v<std::remove_cv_t<std::remove_reference_t<U>>, matrix>, int> = 0>
+		void append_rows(U &&other)
+		{
+			if (c != other.c) throw matrix_size_error("attempt to append_rows on matrices of different column counts");
 
+			constexpr bool is_rvalue = std::is_same_v<U, matrix> || std::is_same_v<U, matrix&&>;
+			typedef std::conditional_t<is_rvalue, mover, noop> migrator;
 
+			data.reserve(data.size() + other.data.size());
+			const std::size_t s = other.data.size();
+			for (std::size_t i = 0; i < s; ++i)
+				data.push_back(migrator{}(other.data[i]));
+			r += other.r;
 
+			// if this is an rvalue append operation, we have special conditions
+			if constexpr (is_rvalue)
+			{
+				assert(this != &other && "do not pass rvalue for self-appending");
+				other.clear();
+			}
+		}
+
+		
 
 
 
@@ -1216,7 +1255,8 @@ using matrix_impl::matrix_size_error;
 
 // given a function object f, returns a vectorized form that can be used on rows/matrices in template expressions.
 // it is undefined behavior if the function has race conditions in parallel context.
-template<typename F>
-decltype(auto) vectorize(F &&f) { return matrix_impl::vectorized_func<std::decay_t<F>> { std::forward<F>(f) }; }
+// if f uses any form of non-atomic synchronized behavior (dynamic alloc, mutex, etc.) then unseq must be set to false to avoid undefined behavior.
+template<bool unseq = true, typename F>
+decltype(auto) vectorize(F &&f) { return matrix_impl::vectorized_func<unseq, std::decay_t<F>> { std::forward<F>(f) }; }
 
 #endif
